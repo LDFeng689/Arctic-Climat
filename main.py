@@ -3,13 +3,14 @@ import FormatData
 import Calculation
 import Plotting
 import xarray as xr
+import os
 
 def process_era5_data():
     dataset = DownloadData.era5_data_load()
     spData = DownloadData.era5_sp_data_load()
     dataset = FormatData.era5_data_format(dataset,spData)
     figures_folder = "Figures/ERA5/"
-    results_folder = "Data&Model/ERA5/"
+    results_folder = "Data&Model/ERA5/Results/"
 
     #OBTAINING THE RESULTING DATASETS
     results = []
@@ -19,20 +20,20 @@ def process_era5_data():
     filenames = [f"{results_folder}Arctic_{month}_results.nc" for month in months]
     for i in range(len(dataset)):
         #dec,jan,feb
-        result, location = Calculation.save_results(dataset[i],filenames[i])
+        result, location = Calculation.Era5_save_results(dataset[i],filenames[i])
         results.append(result)
         file_locations.append(location)
 
     #CALCULATING ZONAL DATA    
-    Greenland_result, Greenland_filename = Calculation.calculate_zonal_averages(results[2],90,83,100,0,"Greenland_feb",results_folder)
-    ChukchiSea_result, ChukchiSea_filename = Calculation.calculate_zonal_averages(results[0],75,69,180,150,"ChukchiSea_dec",results_folder)
+    Greenland_result, Greenland_filename = Calculation.calculate_zonal_averages(results[2],90,83,-100,0,"Greenland_feb",results_folder)
+    ChukchiSea_result, ChukchiSea_filename = Calculation.calculate_zonal_averages(results[0],75,69,-180,-150,"ChukchiSea_dec",results_folder)
     
 
     #PLOTTING ZONAL DATA
-    Plotting.vertical_plot(ChukchiSea_result, figures_folder,description= "ChukchiSea" ,month="December")
-    Plotting.timeseries_plot(ChukchiSea_result, figures_folder, description= "ChukchiSea", month="December")
-    Plotting.vertical_plot(Greenland_result, figures_folder,description= "Greenland" ,month="February")
-    Plotting.timeseries_plot(Greenland_result, figures_folder, description= "Greenland", month="February")
+    Plotting.era5_vertical_plot(ChukchiSea_result, figures_folder,description= "ChukchiSea" ,month="December")
+    Plotting.era5_timeseries_plot(ChukchiSea_result, figures_folder, description= "ChukchiSea", month="December")
+    Plotting.era5_vertical_plot(Greenland_result, figures_folder,description= "Greenland" ,month="February")
+    Plotting.era5_timeseries_plot(Greenland_result, figures_folder, description= "Greenland", month="February")
  
 
     #PLOTTING THE AVERAGE INTENSITY,DEPTH AND THEIR TRENDS ON THE ARCTIC CIRCLE
@@ -40,7 +41,7 @@ def process_era5_data():
 
 
     #PLOTTING THE VERTICAL AND TIMESERIES PLOTS FOR THE 4 POINTS OF INTERESTS
-    pts_of_interest = Calculation.find_trend_extremum(results, showPoints=True)
+    pts_of_interest = Calculation.find_trend_extremum(results, showPoints=False)
  
 
     for point in pts_of_interest:  #error around here
@@ -58,45 +59,40 @@ def process_era5_data():
     print("DONE")
 
 
+
+def process_radiosonde_data():
+    csvFolder = "Data&Model/Radiosonde/CSV/"
+    os.makedirs(csvFolder, exist_ok=True)
+    figFolder = "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde"
+    os.makedirs(figFolder, exist_ok=True)
+    station_numbers = ["71082","71917","71924","04320" ,"01028", "01004"]
+    coordinates = [[82.493, -62.344],[79.989,-85.938], [74.705,-94.969],[76.769,-18.672] , [74.504, 19.001], [78.923, 11.923]]
+
+
+    for station_number,  coordinate in zip(station_numbers,  coordinates):
+        station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number)
+        radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, coordinate)
+        radiosonde_data_res = Calculation.radiosonde_climatology(radiosonde_data)
+        print(f"{station_number} completed")
+        #Plotting.radiosonde_plots(radiosonde_data_res,figFolder, station_number)
+    
+
 def one_time():
-    paths = ["Data&Model/ERA5/Arctic_dec_results.nc",
-            "Data&Model/ERA5/Arctic_jan_results.nc",
-             "Data&Model/ERA5/Arctic_feb_results.nc"]
-    datasets = []
-    figures_folder = "Figures/ERA5/"
-    results_folder = "Data&Model/ERA5/"
-    for path in paths:
-        datasets.append(xr.open_dataset(path,  chunks={'time': 10}))
-    #Calculation.find_trend_extremum(datasets, showPoints=True)
-    
-
-
-    """
-
-    test_folder = "TEST/"
-    #for path in paths:
-    #    datasets.append(xr.open_dataset(path,  chunks={'time': 10}))
-
-    dataset = DownloadData.era5_data_load()
-    dataset = FormatData.era5_data_format(dataset)
-    result, location = Calculation.save_results(dataset[2],f"{test_folder}Arctic_feb_results.nc")
-    
-    results = [result]
-    Plotting.era5_monthly_globe_plot(results,figures_folder)
-    pts_of_interest = Calculation.find_trend_extremum(results)
-    for point in pts_of_interest:
-        data = result.sel(latitude = point[1],longitude = point[2])
-        Plotting.vertical_plot(data, figures_folder, description= point[0], month= point[3])
-        Plotting.timeseries_plot(data, figures_folder, description= point[0], month=point[3])
-
-    """
-
+    csvFolder = "Data&Model/Radiosonde/CSV/"
+    figFolder = "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde"
+    station_number = "71924"
+    coordinate = [74.705,-94.969]
+    station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number, overwrite=True)
+    radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, coordinate, overwrite=True)
+    radiosonde_results = Calculation.radiosonde_climatology(radiosonde_data, overwrite= True)
+    Plotting.radiosonde_plots(radiosonde_results, figFolder, station_number)
 
 
 
 if __name__ == "__main__":
-    process_era5_data()
-    #one_time()
+    #process_era5_data()
+    one_time()
+    #process_radiosonde_data()
 
 
 '''

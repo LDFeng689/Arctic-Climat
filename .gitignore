@@ -9,9 +9,11 @@
 *.grib
 *.grib2
 
+
 Data&Model/
 __pycache__/
 .venv/
 .ipynb_checkpoints/
 .vscode/
 Figures/
+test.py

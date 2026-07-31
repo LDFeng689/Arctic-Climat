@@ -9,6 +9,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import scipy
 import os
+from datetime import datetime
+import pandas as pd
 
 def era5_monthly_globe_plot(datasets,foldername):
     #Initiate the values to plot and the time label
@@ -21,10 +23,10 @@ def era5_monthly_globe_plot(datasets,foldername):
     filenames = [f"{foldername}Arctic_{feature}_1979to2014.png" for feature in features]
 
     for i in range(len(features)):
-        plotting_3month_on_map(datasets, features[i] ,months, descriptions[i], titles[i],colorMaps[i],type[i],filenames[i])
+        era5_plotting_3month_on_map(datasets, features[i] ,months, descriptions[i], titles[i],colorMaps[i],type[i],filenames[i])
 
 #Initialize the arctic circle
-def format_arctic_axis(ax, title_text=""):
+def era5_format_arctic_axis(ax, title_text=""):
     """
     Applies the standardized Arctic Circle base map formatting 
     (66.5N-90N, circular boundary, and coastlines) to an existing axis slot.
@@ -54,7 +56,7 @@ def format_arctic_axis(ax, title_text=""):
         ax.set_title(title_text, fontsize=10, fontweight='bold', pad=10)
 
 #Plots all 3 months with common color bar
-def plotting_3month_on_map(datasets, feature, months, description, title,colorMap,type,filename):
+def era5_plotting_3month_on_map(datasets, feature, months, description, title,colorMap,type,filename):
     # 1. Initialize a 1x3 horizontal layout
     # We specify the Cartopy projection inside the subplot keyword dictionary
     fig, axes = plt.subplots(
@@ -78,7 +80,7 @@ def plotting_3month_on_map(datasets, feature, months, description, title,colorMa
     mesh_objects = []
     for i, ax in enumerate(axes):
         # Apply our reusable mold to this specific axis slot
-        format_arctic_axis(ax, title_text=months[i])
+        era5_format_arctic_axis(ax, title_text=months[i])
         
 
         # Overlay the gridded data onto the formatted axis slot
@@ -110,6 +112,13 @@ def plotting_3month_on_map(datasets, feature, months, description, title,colorMa
 
     # Save the multi-panel figure cleanly
     #plt.tight_layout(rect=[0, 0.12, 1, 0.90])
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+        except PermissionError:
+            # If a background process or file viewer is holding it,
+            # renaming it allows you to save the new one without crashing
+            os.rename(filename, filename + ".old")
     plt.savefig(filename, dpi=300, bbox_inches='tight')
             
     plt.savefig(filename)
@@ -117,7 +126,7 @@ def plotting_3month_on_map(datasets, feature, months, description, title,colorMa
     plt.close()
 
 
-def vertical_plot(dataset,foldername, description="",month=""):
+def era5_vertical_plot(dataset,foldername, description="",month=""):
     tempTrend = dataset.temperatureTrend.values
     #print(tempTrend)
     pressure_levels = dataset.pressure_level
@@ -134,6 +143,13 @@ def vertical_plot(dataset,foldername, description="",month=""):
     plt.grid(True)
 
     filename = f"{foldername}Arctic_vertical_{description}.png"
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+        except PermissionError:
+            # If a background process or file viewer is holding it,
+            # renaming it allows you to save the new one without crashing
+            os.rename(filename, filename + ".old")
             
     plt.savefig(filename)
 
@@ -141,7 +157,7 @@ def vertical_plot(dataset,foldername, description="",month=""):
     plt.close()
     
 
-def timeseries_plot(dataset, foldername, description: str, month: str):
+def era5_timeseries_plot(dataset, foldername, description: str, month: str):
     sfc_temp = dataset.surface_temp.values
     inv_top = dataset.inversion_top.values
     depth = dataset.depth.values
@@ -185,6 +201,14 @@ def timeseries_plot(dataset, foldername, description: str, month: str):
 
     #plt.tight_layout()
     filename = f"{foldername}Arctic_timeseries_Temp_{description}.png"
+
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+        except PermissionError:
+            # If a background process or file viewer is holding it,
+            # renaming it allows you to save the new one without crashing
+            os.rename(filename, filename + ".old")
             
     plt.savefig(filename)
 
@@ -219,7 +243,7 @@ def timeseries_plot(dataset, foldername, description: str, month: str):
 
     # Meteorology convention: higher pressure is lower altitude, so invert axis
 
-    #ax2_right.invert_yaxis()
+    ax2_right.invert_yaxis()
     ax2_right.grid(False)
     ax2_right.margins(x=0, y=0.15)
 
@@ -234,6 +258,14 @@ def timeseries_plot(dataset, foldername, description: str, month: str):
 
     filename = f"{foldername}Arctic_timeseries_Depth_Pres_{description}.png"
     #plt.tight_layout()
+    # If the file exists, delete it from disk first to release Windows file locks
+    if os.path.exists(filename):
+        try:
+            os.remove(filename)
+        except PermissionError:
+            # If a background process or file viewer is holding it,
+            # renaming it allows you to save the new one without crashing
+            os.rename(filename, filename + ".old")
 
     plt.savefig(filename)
 
@@ -242,8 +274,175 @@ def timeseries_plot(dataset, foldername, description: str, month: str):
     plt.clf()
     plt.close(fig2)
 
+def radiosonde_plots(dataset, resultsFolder):
+    stationID = dataset.attrs["SiteName"]
+    stationResFolder = os.path.join(resultsFolder,stationID)
+    os.makedirs(stationResFolder, exist_ok=True)
 
+    #1.Timeseries plots
+    #Separating the data into each of the 6 timesteps
+    grouped1 = dataset.groupby(dataset.time_monthly.dt.strftime("%m-%H"))
+    timeKey = list(grouped1.groups.keys())
+    sub_data = [sub_ds for _, sub_ds in grouped1]
+    timeName = [datetime.strptime(key, "%m-%H").strftime("%B %H:00") for key in timeKey]  #Name of the time steps for each graphs
+    years = [np.unique(sub_ds.time_monthly.dt.year.values) for sub_ds in sub_data]
+
+    freq = [sub_ds["sbi_frequency"].values for sub_ds in sub_data]
+    strength = [sub_ds["sbi_strength"].values for sub_ds in sub_data]
+    depth = [sub_ds["sbi_depth"].values for sub_ds in sub_data]
+    intensity = [sub_ds["sbi_intensity"].values for sub_ds in sub_data]
+    topT = [sub_ds["inversion_top_temp"].values for sub_ds in sub_data]
+    topZ = [sub_ds["inversion_top_height"].values for sub_ds in sub_data]
+    radiosonde_timeseries_plots(description = "SBI Frequency", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = freq, times = timeName, outputFolder = stationResFolder)
+    radiosonde_timeseries_plots(description = "SBI Intensity", xaxis = "Year", yaxis = "Lapse Rate (K m-1)", xvar = years, yvar = intensity, times = timeName, outputFolder = stationResFolder)
+    radiosonde_timeseries_plots(description = "SBI Strength", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = strength,times = timeName, outputFolder = stationResFolder)
+    radiosonde_timeseries_plots(description = "SBI Depth", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = depth, times = timeName,outputFolder = stationResFolder)
+    radiosonde_timeseries_plots(description =  "Inversion Top Temperature", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = topT,times = timeName, outputFolder = stationResFolder)
+    radiosonde_timeseries_plots(description = "Inversion Top Height", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = topZ, times = timeName,outputFolder = stationResFolder)
+    
+
+
+    grouped2 = dataset.groupby(dataset.time_diff.dt.strftime("%m-%H"))
+    timeKey2 = list(grouped2.groups.keys())
+    sub_data2 = [sub_ds for _, sub_ds in grouped2]
+    timeName2 = [datetime.strptime(key, "%m-%H").strftime("%B %H:00") for key in timeKey2]  #Name of the time steps for each graphs
+    years = [np.unique(sub_ds.time_diff.dt.year.values) for sub_ds in sub_data2]
+
+    diT = [sub_ds["diurnal_contrast_T"].values for sub_ds in sub_data2]
+    diF = [sub_ds["diurnal_contrast_F"].values for sub_ds in sub_data2]
+    diZ = [sub_ds["diurnal_contrast_Z"].values for sub_ds in sub_data2]
+    impact = [sub_ds["sbi_impact"].values for sub_ds in sub_data2]
+    radiosonde_timeseries_plots(description = "Diurnal Strength Contrast", xaxis = "Year", yaxis = "Temperature(K)", xvar = years, yvar = diT, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    radiosonde_timeseries_plots(description = "Diurnal Frequency Contrast", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = diF, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    radiosonde_timeseries_plots(description = "Diurnal Depth Contrast", xaxis = "Year", yaxis = "Depth(m)", xvar = years, yvar = diZ, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    radiosonde_timeseries_plots(description = "SBI Impact", xaxis = "Year", yaxis = "Impact temperature(K)", xvar = years, yvar = impact, times = ["January", "February", "December"], outputFolder = stationResFolder, singleHour = True, timeless = True)
+
+    #2. Vertical plot
+    #Also in time_monthly so take grouped1
+    tempTrend = dataset["temperature_trend"].values 
+    pressure = [sub_ds["pressure"].values for sub_ds in sub_data]
+    radiosonde_timeseries_plots(description = "Temperature Trend", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrend, yvar = pressure, times = timeName, outputFolder = stationResFolder, vertical = True)
+
+    #3. Table for trends
+    radiosonde_table(dataset, outputFolder = stationResFolder)
+
+
+
+def radiosonde_timeseries_plots(description, xaxis, yaxis, xvar, yvar, times = None, outputFolder = "", yvar2 = None, singleHour = False, vertical = False, timeless = False):
+    #For sbi: freq, strength, depth, intensity, impact, top height, top temp, 
+    if singleHour:
+        fig, axes = plt.subplots(1, 3, figsize=(15, 8))
+    else:
+        fig, axes = plt.subplots(2, 3, figsize=(15, 8)) #Each row is an hour
+
+    axes = axes.flatten()
+    if type(description) != str:
+        title = description[0]
+        dataName = description[1]
+        doubleEntry = True
+    else:
+        title = description
+        dataName = title
+        doubleEntry = False
+
+    for i, ax in enumerate(axes):
+
+        ax.set_xlabel(xaxis)
+        ax.set_ylabel(yaxis)
+        if doubleEntry == True:
+            ax.plot(xvar[i], yvar[i], label = dataName[0])
+            ax.plot(xvar[i], yvar2[i], label = dataName[1])
+        else:
+            ax.plot(xvar[i], yvar[i]) 
+
+        if timeless == True:
+            ax.set_title(f"{title} for {times[i]}")
+        else:
+            ax.set_title(f"{title} for {times[i]} UTC")
+
+        if vertical == True:   #Vertical plot so that go from higher pressure to lower
+                    ax.invert_yaxis()
+
+        ax.legend()
+        ax.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(outputFolder,f"{title}.png"))
+
+
+
+def radiosonde_table(dataset, outputFolder):
+    groupTrend = dataset.groupby(dataset.month_hour)
+    timeKey3 = list(groupTrend.groups.keys())
+    sub_data3 = [sub_ds for _, sub_ds in groupTrend]
+    timeName3 = [datetime.strptime(key, "%m-%H").strftime("%B %H:00") for key in timeKey3]
+
+    freqTrend = [sub_ds["frequency_trend"].values for sub_ds in sub_data3]
+    strengthTrend = [sub_ds["strength_trend"].values for sub_ds in sub_data3]
+    depthTrend = [sub_ds["depth_trend"].values for sub_ds in sub_data3]
+    intensityTrend = [sub_ds["intensity_trend"].values for sub_ds in sub_data3]
+
+    row_labels = [
+        "Frequency Trend (decade^-1)",
+        "Strength Trend (k decade^-1)",
+        "Depth Trend (m decade^-1)",
+        "Intensity Trend (k m^-1 decade^-1)",
+    ]
+    col_labels = timeName3  # 6 column names (e.g., 'December 00:00', ...)
+
+    # 2. Extract and flatten values into a 2D matrix (4 rows x 6 columns)
+    # Note: np.squeeze handles 1D arrays or single-element sub-arrays cleanly
+    data_matrix = np.array(
+        [
+            [np.squeeze(val) for val in freqTrend],
+            [np.squeeze(val) for val in strengthTrend],
+            [np.squeeze(val) for val in depthTrend],
+            [np.squeeze(val) for val in intensityTrend],
+        ]
+    )
+
+    # Optional: Format floating point numbers to 4 decimal places for clean reading
+    formatted_data = np.vectorize(
+        lambda x: f"{float(x):.4f}" if np.issubdtype(type(x), np.number) else str(x)
+    )(data_matrix)
+
+    # 3. Create DataFrame
+    df = pd.DataFrame(formatted_data, index=row_labels, columns=col_labels)
+
+    # 4. Render Table using Matplotlib
+    fig, ax = plt.subplots(figsize=(12, 3.5))
+    ax.axis("off")  # Hide surrounding plot axes
+
+    # Build table layout
+    table = ax.table(
+        cellText=df.values,
+        rowLabels=df.index,
+        colLabels=df.columns,
+        cellLoc="center",
+        loc="center",
+    )
+
+    # 5. Apply styling for publication/printing
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 2.0)  # Adjust cell width and height
+
+    # Style headers (bold text + light grey background)
+    for (r, c), cell in table.get_celld().items():
+        if r == 0 or c == -1:  # Column header or Row label
+            cell.set_text_props(weight="bold")
+            cell.set_facecolor("#f0f4f8")
+
+    plt.tight_layout()
+
+    # 6. Save as high-resolution PNG ready for printing
+    plt.savefig(os.path.join(outputFolder,"sbi_trends_table.png"), dpi=300, bbox_inches="tight")
+    
 
 
 if __name__ == "__main__":
-    pass
+    #dataset = xr.open_dataset(r"D:\McGill\Atoc396\ArcticClimat\Data&Model\Radiosonde\NC\71917_results.nc", chunks={'time': 10})
+    #radiosonde_plots(dataset, "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde", "71917")
+
+    dataset = xr.open_dataset(r"D:\McGill\Atoc396\ArcticClimat\Data&Model\Radiosonde\NC\71082_results.nc", chunks={'time': 10})
+    radiosonde_plots(dataset, "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde")
