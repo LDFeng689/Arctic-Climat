@@ -4,6 +4,7 @@ import os
 from scipy import stats
 import itertools
 import pandas as pd
+from pathlib import Path
 
 def Era5_find_inversion_depth_intensity(dataset):
     # 1. Create the lightweight container for your final Xarray output
@@ -382,10 +383,8 @@ def calculate_zonal_averages(dataset, north:float, south:float, west:float, east
 def find_trend_extremum(datasets, showPoints = False):
     #TO CHECK WHY VALUES DON'T MATCH THE PAPER
 
-#NEED TO REMOVE THE VALUES OF ENTRIES WITH PVAL>0.05
+    #NEED TO REMOVE THE VALUES OF ENTRIES WITH PVAL>0.05
 
-
-# Pass monthly intensity trend
     global_maxITrend_val = -np.inf
     global_minITrend_val = np.inf
     global_maxDTrend_val = -np.inf
@@ -435,11 +434,13 @@ def find_trend_extremum(datasets, showPoints = False):
         ["Point_of_Max_Depth_Trend",     global_maxDTrend_loc.latitude.values.item(), global_maxDTrend_loc.longitude.values.item(), global_maxDTrend_loc.attrs['Month']],
         ["Point_of_Min_Depth_Trend",     global_minDTrend_loc.latitude.values.item(), global_minDTrend_loc.longitude.values.item(), global_minDTrend_loc.attrs['Month']]
     ]
-           
+
+
+#ABOVE WERE FIRST ATTEMPS OF RECREATING RESULTS, BELOW IS THE ACTUALLY USED CODES          
 
 def radiosonde_climatology(dataset, overwrite = False):
     site_name = dataset.attrs["SiteName"]
-    output_location = f"D:/McGill/Atoc396/ArcticClimat/Data&Model/Radiosonde/NC/{site_name}_results.nc"
+    output_location = f"Data&Model/Radiosonde/NC/{site_name}_results.nc"
 
     if os.path.isfile(output_location) and overwrite == False:    #Skip if already exist and don't want to do changes to it
         print(f"{site_name} Climatology already calculated ")
@@ -569,15 +570,12 @@ def radiosonde_climatology(dataset, overwrite = False):
             h2 = height[t_idx,p_idx]
 
             if t1 > t2: #Top = highest peak thats greater or equal than the one below it
-                if temp[t_idx,0] - t1 !=0:
+                if temp[t_idx,0] - t1 <0:     #RECHECK THIS CONDITIONAL
                     frequency_bool[t_idx] = 1.0
                 else:
                     frequency_bool[t_idx] = 0.0
                 break
             t1, h1 = t2, h2
-
-    has_zero = (frequency_bool == 0).any()
-    
 
     sbi_freq_da = xr.DataArray(
         data=frequency_bool,
@@ -732,16 +730,343 @@ def radiosonde_climatology(dataset, overwrite = False):
     #print("5. NC created")   
     return ds_climatology
 
+def radiosonde_coordinates(csvFolder, coordinate = [45,0,45,0]):
+     #N,W,S,E   Initial values as given
+
+    csv_folder = Path(csvFolder)
+    origins = ["","","",""]
+
+    # Use rglob to directly match all .csv files regardless of folder depth
+    for csv_file in csv_folder.rglob("*.csv"):
+        tryPlugin = False
+        try:
+            # 1. 'usecols' speeds up reading by skipping unused columns
+            # 2. 'engine="c"' ensures high-performance parsing
+            data = pd.read_csv(csv_file, usecols=["longitude", "latitude"])
+        except (ValueError, KeyError):
+            # Skip files missing 'longitude' or 'latitude' headers
+            continue
+
+        # Convert to numeric safely
+        lon = pd.to_numeric(data["longitude"], errors="coerce")
+        lat = pd.to_numeric(data["latitude"], errors="coerce")
+
+        # Extract min/max (Pandas automatically drops NaNs)
+        min_lon, max_lon = lon.min(), lon.max()
+        min_lat, max_lat = lat.min(), lat.max()
+
+        # Update coordinates only if valid numeric bounds were returned
+        if pd.notna(max_lon) and max_lon > coordinate[3]:
+            coordinate[3] = max_lon
+            origins[3] = csv_file
+        if pd.notna(min_lon) and min_lon < coordinate[1]:
+            coordinate[1] = min_lon
+            origins[1] = csv_file
+        if pd.notna(max_lat) and max_lat > coordinate[0]:
+            coordinate[0] = max_lat
+            origins[0] = csv_file
+        if pd.notna(min_lat) and min_lat < coordinate[2]:
+            coordinate[2] = min_lat
+            origins[2] = csv_file
+    #print(origins)
+    coordinate = [float(x) for x in coordinate]
+    return(coordinate)
+                            
+def era5_monthly_climatology(datasetH,datasetM, site_name, overwrite = False):
+    site_name = datasetM.attrs["SiteName"]
+    output_location = f"Data&Model/ERA5/{site_name}/era5_{site_name}_results.nc"
+
+    if os.path.isfile(output_location) and overwrite == False:    #Skip if already exist and don't want to do changes to it
+        print(f"{site_name} Climatology already calculated ")
+        ds = xr.open_dataset(output_location)
+        return ds
+
+    print(f"Calculating Climatology for {site_name}")
+
+    times = datasetM.time.values
+    shape = len(times)
+    
+    inversion_top_p = np.full(shape, 0.0, dtype="float32")
+    inversion_top_t   = np.full(shape, 0.0, dtype="float32")
+    inversion_top_z   = np.full(shape, 0.0, dtype="float32")
+    sbi_strength    = np.full(shape, 0.0, dtype="float32")
+    sbi_depth       = np.full(shape, 0.0, dtype="float32")
+    sbi_intensity   = np.full(shape, 0.0, dtype="float32")
+
+    #1. Inversion Top + Basic SBI parameters
+    # Constants 
+    Rd = 287 
+    g = 9.8   
+
+    #Variables
+    pressures = datasetM.pressure.values  
+    t_array = datasetM.t.values
+    q_array = datasetM.q.values
+    sfc_p = datasetM.sp.values
+    sfc_t = datasetM.t2m.values 
+    sfc_z = datasetM.z.values/g
+
+        #preallocate some output arrays
+    shape_pressure = len(pressures)
+    month_nums = [1, 2, 12]
+    hour_nums = [0, 12]
+
+    # List of integer tuples: [(12, 0), (12, 12), (1, 0), (1, 12), (2, 0), (2, 12)]
+    month_hour = list(itertools.product(month_nums, hour_nums))
+    month_hour_str = [f"{m:02d}-{h:02d}" for m, h in month_hour]
+    n_combos = len(month_hour) # 6
+
+    for t_idx in range(len(times)):         
+        p1 = sfc_p[t_idx]
+        t1 = sfc_t[t_idx]
+        next_p_idx = np.argmin(np.where(pressures <= p1, p1-pressures, np.inf)) 
+        current_depth = 0.0
+
+        q1 = q_array[t_idx, next_p_idx-1]
+        z1 = sfc_z[t_idx]
+
+
+
+
+        # Search vertically upward through the indices of the pressure levels
+        for p_idx in range(next_p_idx, len(pressures)):
+            p2 = pressures[p_idx]
+            t2 = t_array[t_idx, p_idx]
+            q2 = q_array[t_idx, p_idx]
+            
+            if t1 > t2: #Top = highest peak thats greater or equal than the one below it
+                # Inversion peak located
+                inversion_top_t[t_idx] = t1
+                inversion_top_p[t_idx] = p1
+                inversion_top_z[t_idx] = z1 + current_depth
+                sbi_depth[t_idx] = current_depth
+                sbi_strength[t_idx] = t1 - sfc_t[t_idx]
+                if sbi_depth[t_idx] !=0:
+                    sbi_intensity[t_idx] = sbi_strength[t_idx]/sbi_depth[t_idx]
+                else:
+                    sbi_intensity[t_idx] = 0
+                break              
+
+            else:
+                # Inversion layer continues; calculate layer thickness
+                Tavg = (t1 + t2) / 2.0
+                Qavg = (q1 + q2) / 2.0
+                logp = np.log(p1 / p2)
+                
+                current_depth += (Rd * (1.0 + 0.6 * Qavg) * Tavg * logp) / g
+                
+                # Advance pointers up to the next layer
+                t1, q1, p1 = t2, q2, p2
+    sbi_frequency = era5_frequency(datasetH)
+
+        #3 Final Climatology Dataset Structure and assembling
+
+    ds_climatology = xr.Dataset(
+        data_vars={
+
+            #Data to keep
+            "temperature": (("time_monthly","pressure"), t_array, {"units": "C", "long_name": "Temperature"}),
+
+            # --- Core SBI Climatology Indices ---
+            "sbi_frequency": (("time_monthly",), sbi_frequency, {"units": "1", "long_name": "SBI Frequency"}),
+            "sbi_strength":  (("time_monthly",), sbi_strength, {"units": "K", "long_name": "Inversion Strength (T_top - T_sfc)"}),
+            "sbi_depth":     (("time_monthly",), sbi_depth, {"units": "m", "long_name": "Inversion Depth (z_top - z_sfc)"}),
+            "sbi_intensity": (("time_monthly",), sbi_intensity, {"units": "K km-1", "long_name": "Inversion Lapse Rate / Intensity"}),
+
+            # --- Physical State Variables ---
+            #"surface_pressure":     (shape_monthly, surface_pressure, {"units": "hPa", "long_name": "Surface Pressure during SBI"}),
+            "inversion_top_z": (("time_monthly",), inversion_top_z, {"units": "m", "long_name": "Inversion Top Geopotential Height"}),
+            "inversion_top_t":   (("time_monthly",), inversion_top_t, {"units": "K", "long_name": "Inversion Top Temperature"}),
+            "inversion_top_p":   (("time_monthly",), inversion_top_z, {"units": "hPa", "long_name": "Inversion Top Pressure"}),
+            
+
+        },
+        coords={
+            "time_monthly": times,
+            "pressure":( "pressure",pressures, {"units": "hPa", "long_name": "Pressure"}),
+            "time_diff": datasetM.time.where(datasetM.time.dt.hour == 0, drop=True).values,
+
+            "month_hour": ("month_hour", month_hour_str, {"description":"(month,hour)"})
+                   # Pass your actual time coordinate array here
+            
+        })
+
+
+    #FROM HERE ON IT'S THE SAME AS RADIOSONDE SINCE THE DATA HAVE BEEN FORMATTED/CALCULATED TO HAVE THE SAME STRUCTURE
+
+    #4 Find the Trends in Depth, Strength, Frequency, Lapse rate = Intensity, temperature
+
+    frequency_trend        = np.full(n_combos, np.nan, dtype="float32")
+    frequency_trend_r2     = np.full(n_combos, np.nan, dtype="float32")
+    frequency_trend_pvalue = np.full(n_combos, np.nan, dtype="float32")
+
+    strength_trend         = np.full(n_combos, np.nan, dtype="float32")
+    strength_trend_r2      = np.full(n_combos, np.nan, dtype="float32")
+    strength_trend_pvalue  = np.full(n_combos, np.nan, dtype="float32")
+
+    depth_trend            = np.full(n_combos, np.nan, dtype="float32")
+    depth_trend_r2         = np.full(n_combos, np.nan, dtype="float32")
+    depth_trend_pvalue     = np.full(n_combos, np.nan, dtype="float32")
+
+    intensity_trend        = np.full(n_combos, np.nan, dtype="float32")
+    intensity_trend_r2     = np.full(n_combos, np.nan, dtype="float32")
+    intensity_trend_pvalue = np.full(n_combos, np.nan, dtype="float32")
+
+    dim = (n_combos, shape_pressure)
+    temperature_trend        = np.full(dim, np.nan, dtype="float32")
+    temperature_trend_r2     = np.full(dim, np.nan, dtype="float32")
+    temperature_trend_pvalue = np.full(dim, np.nan, dtype="float32")
+    for idx, (month, hour) in enumerate(month_hour):
+    
+        # 1. Create the boolean mask for the current month/hour
+        time_mask = (ds_climatology.time_monthly.dt.hour == hour) & (ds_climatology.time_monthly.dt.month == month)
+        
+        # 2. Extract matching years to serve as x_time (MUST match y_freq length!)
+        x_years = ds_climatology.time_monthly.dt.year.values[time_mask]
+
+        # --- 1. SBI Frequency ---
+        y_freq = ds_climatology["sbi_frequency"].values[time_mask]
+        valid_freq = ~np.isnan(y_freq) & ~np.isnan(x_years)
+        if np.sum(valid_freq) > 2:
+            res_f = stats.linregress(x_years[valid_freq], y_freq[valid_freq])
+            frequency_trend[idx]        = res_f.slope * 10  # convert to per decade
+            frequency_trend_r2[idx]     = res_f.rvalue ** 2
+            frequency_trend_pvalue[idx] = res_f.pvalue
+
+        # --- 2. SBI Strength ---
+        y_str = ds_climatology["sbi_strength"].values[time_mask]
+        valid_str = ~np.isnan(y_str) & ~np.isnan(x_years)
+        if np.sum(valid_str) > 2:
+            res_s = stats.linregress(x_years[valid_str], y_str[valid_str])
+            strength_trend[idx]        = res_s.slope * 10
+            strength_trend_r2[idx]     = res_s.rvalue ** 2
+            strength_trend_pvalue[idx] = res_s.pvalue
+
+        # --- 3. SBI Depth ---
+        y_dep = ds_climatology["sbi_depth"].values[time_mask]
+        valid_dep = ~np.isnan(y_dep) & ~np.isnan(x_years)
+        if np.sum(valid_dep) > 2:
+            res_d = stats.linregress(x_years[valid_dep], y_dep[valid_dep])
+            depth_trend[idx]        = res_d.slope * 10
+            depth_trend_r2[idx]     = res_d.rvalue ** 2
+            depth_trend_pvalue[idx] = res_d.pvalue
+
+        # --- 4. SBI Intensity ---
+        y_int = ds_climatology["sbi_intensity"].values[time_mask]
+        valid_int = ~np.isnan(y_int) & ~np.isnan(x_years)
+        if np.sum(valid_int) > 2:
+            res_i = stats.linregress(x_years[valid_int], y_int[valid_int])
+            intensity_trend[idx]        = res_i.slope * 10
+            intensity_trend_r2[idx]     = res_i.rvalue ** 2
+            intensity_trend_pvalue[idx] = res_i.pvalue
+
+        # --- 5. Temperature Profile ---
+        y_temp = ds_climatology["temperature"].values[time_mask]
+        for p_idx, p_val in enumerate(pressures):
+            temp = y_temp[:, p_idx]
+            valid_temp = ~np.isnan(temp) & ~np.isnan(x_years)
+            if np.sum(valid_temp) > 2:               
+                # Fixed typo: changed valid_int -> valid_temp below
+                res_t = stats.linregress(x_years[valid_temp], temp[valid_temp])
+                temperature_trend[idx][p_idx]        = res_t.slope * 10
+                temperature_trend_r2[idx][p_idx]     = res_t.rvalue ** 2
+                temperature_trend_pvalue[idx][p_idx] = res_t.pvalue
+
+
+    ds_climatology["frequency_trend"] = (("month_hour",), frequency_trend, {"units": "% decade-1", "long_name": "Trend in SBI Frequency"})
+    ds_climatology["frequency_trend_r2"] = (("month_hour",), frequency_trend_r2, {"units": "1", "long_name": "Coefficient of Determination (R^2) for SBI Frequency Trend"})
+    ds_climatology["frequency_trend_pvalue"] = (("month_hour",), frequency_trend_pvalue, {"units": "1", "long_name": "p-value for SBI Frequency Trend"})
+
+
+    ds_climatology["strength_trend"] = (("month_hour",), strength_trend, {"units": "K decade-1", "long_name": "Trend in SBI Strength"})
+    ds_climatology["strength_trend_r2"] = (("month_hour",), strength_trend_r2, {"units": "1", "long_name": "Coefficient of Determination (R^2) for SBI Strength Trend"})
+    ds_climatology["strength_trend_pvalue"] = (("month_hour",), strength_trend_pvalue, {"units": "1", "long_name": "p-value for SBI Strength Trend"})
+
+
+    ds_climatology["depth_trend"] = (("month_hour",), depth_trend, {"units": "m decade-1", "long_name": "Trend in SBI Depth"})
+    ds_climatology["depth_trend_r2"] = (("month_hour",), depth_trend_r2, {"units": "1", "long_name": "Coefficient of Determination (R^2) for SBI Depth Trend"})
+    ds_climatology["depth_trend_pvalue"] = (("month_hour",), depth_trend_pvalue, {"units": "1", "long_name": "p-value for SBI Depth Trend"})
+
+
+    ds_climatology["intensity_trend"] = (("month_hour",), intensity_trend, {"units": "K km-1 decade-1", "long_name": "Trend in SBI Intensity"})
+    ds_climatology["intensity_trend_r2"] = (("month_hour",), intensity_trend_r2, {"units": "1", "long_name": "Coefficient of Determination (R^2) for SBI Intensity Trend"})
+    ds_climatology["intensity_trend_pvalue"] = (("month_hour",), intensity_trend_pvalue, {"units": "1", "long_name": "p-value for SBI Intensity Trend"})
+
+    ds_climatology["temperature_trend"] = (("month_hour","pressure"), temperature_trend, {"units": "K decade-1", "long_name": "Trend in Temperature"})
+    ds_climatology["temperature_trend_r2"] = (("month_hour","pressure"), temperature_trend_r2, {"units": "1", "long_name": "Coefficient of Determination (R^2) for Temperature Trend"})
+    ds_climatology["temperature_trend_pvalue"] = (("month_hour","pressure"), temperature_trend_pvalue, {"units": "1", "long_name": "p-value for Temperature"})
+    #print("3. Trends done")
+    
+    #5 Find the secondary indices: impact, diurnal contrast 
+    ELR = 0.0065   
+    sbiImpact_00 = ds_climatology["sbi_depth"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 0)).values * ELR + ds_climatology["sbi_strength"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 0)).values 
+    sbiImpact_12 = ds_climatology["sbi_depth"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 12)).values * ELR + ds_climatology["sbi_strength"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 12)).values     
+    sbi_impact = (sbiImpact_00 + sbiImpact_12)/2
+    ds_climatology["sbi_impact"] = (("time_diff"), sbi_impact, {"units": "K m", "long_name": "Cumulative Thermal Deficit Impact"})
+
+    diurnal_contrast_F = ds_climatology["sbi_frequency"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 12)).values - ds_climatology["sbi_frequency"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 0)).values
+    ds_climatology["diurnal_contrast_F"] = (("time_diff",), diurnal_contrast_F, {"units": "%", "long_name": "Diurnal Frequency Contrast (12Z - 00Z)"})
+
+    diurnal_contrast_T = ds_climatology["sbi_strength"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 12)).values - ds_climatology["sbi_strength"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 0)).values
+    ds_climatology["diurnal_contrast_T"] = (("time_diff",), diurnal_contrast_T, {"units": "K", "long_name": "Diurnal Strength Contrast (12Z - 00Z)"})
+
+    diurnal_contrast_Z = ds_climatology["sbi_depth"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 12)).values - ds_climatology["sbi_depth"].sel(time_monthly=(ds_climatology.time_monthly.dt.hour == 0)).values
+    ds_climatology["diurnal_contrast_Z"] = (("time_diff",), diurnal_contrast_Z, {"units": "m", "long_name": "Diurnal Depth Contrast (12Z - 00Z)"})
+
+    #print("4. Indices done")
+    ds_climatology.attrs["SiteName"] = site_name
+    ds_climatology.to_netcdf(output_location, mode='w')
+    #print("5. NC created")   
+    return ds_climatology
+
+def era5_frequency(dataset):
+    time = dataset.time.values
+    sfc_temp = dataset.t2m.values
+    sfc_pressure = dataset.sp.values
+    pressure = dataset.pressure.values
+    temp = dataset.t.values
+
+    frequency_bool = np.full(len(time), 0.0, dtype="float")
+    
+    for t_idx in range(len(time)):
+        t1 = sfc_temp[t_idx]
+        sp = sfc_pressure[t_idx]
+        next_p_idx = np.argmin(np.where(pressure <= sp, sp-pressure, np.inf))
+
+        for p_idx in range(next_p_idx,len(pressure)):
+            t2 = temp[t_idx,p_idx]  
+
+
+            if t1 > t2: #Top = highest peak thats greater or equal than the one below it
+                if sfc_temp[t_idx] - t1 < 0:
+                    frequency_bool[t_idx] = 1.0
+                break   #no need for else condition since initialised to 0.0
+            t1 = t2
+
+    sbi_freq_ds = xr.Dataset(
+        data_vars={"sbi_frequency": (("time",), frequency_bool)},
+        coords={"time": time}
+    )
+
+    # Calculate your 2D monthly/hourly climatology (month x hour)    #ERROR HERE
+    time_keys = sbi_freq_ds.time.dt.strftime("%Y-%m-%H")
+    sbi_frequency = sbi_freq_ds.groupby(time_keys).mean(dim="time")
+    sbi_frequency = sbi_frequency.sbi_frequency.values
+
+    return sbi_frequency 
+
+
+
 
 
 
 
 if __name__ == "__main__":
-    from DownloadData import era5_data_load
-    from FormatData import era5_data_format
 
-    dataset = xr.open_dataset(r"D:\McGill\Atoc396\ArcticClimat\Data&Model\Radiosonde\NC\71082.nc", chunks={'time': 10})
-    radiosonde_climatology(dataset, overwrite=True)
+
+    dataset = xr.open_dataset(r"Data&Model\ERA5\71082\ERA5_hourly_71082.nc", chunks={'time': 10})
+    era5_frequency(dataset)
+    #radiosonde_climatology(dataset, overwrite=True)
     #era5data = era5_data_load()
     #era5_monthly_data = era5_data_format(era5data) #list with jan,feb,dec data
     #save_results(era5_monthly_data[0],"Data&Model/ERA5data_arctic_jan_results.nc")

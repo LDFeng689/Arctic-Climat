@@ -274,7 +274,10 @@ def era5_timeseries_plot(dataset, foldername, description: str, month: str):
     plt.clf()
     plt.close(fig2)
 
-def radiosonde_plots(dataset, resultsFolder):
+
+#ABOVE WERE FIRST ATTEMPS OF RECREATING RESULTS, BELOW IS THE ACTUALLY USED CODES 
+
+def climatology_plots(dataset, resultsFolder):
     stationID = dataset.attrs["SiteName"]
     stationResFolder = os.path.join(resultsFolder,stationID)
     os.makedirs(stationResFolder, exist_ok=True)
@@ -291,14 +294,16 @@ def radiosonde_plots(dataset, resultsFolder):
     strength = [sub_ds["sbi_strength"].values for sub_ds in sub_data]
     depth = [sub_ds["sbi_depth"].values for sub_ds in sub_data]
     intensity = [sub_ds["sbi_intensity"].values for sub_ds in sub_data]
-    topT = [sub_ds["inversion_top_temp"].values for sub_ds in sub_data]
-    topZ = [sub_ds["inversion_top_height"].values for sub_ds in sub_data]
-    radiosonde_timeseries_plots(description = "SBI Frequency", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = freq, times = timeName, outputFolder = stationResFolder)
-    radiosonde_timeseries_plots(description = "SBI Intensity", xaxis = "Year", yaxis = "Lapse Rate (K m-1)", xvar = years, yvar = intensity, times = timeName, outputFolder = stationResFolder)
-    radiosonde_timeseries_plots(description = "SBI Strength", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = strength,times = timeName, outputFolder = stationResFolder)
-    radiosonde_timeseries_plots(description = "SBI Depth", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = depth, times = timeName,outputFolder = stationResFolder)
-    radiosonde_timeseries_plots(description =  "Inversion Top Temperature", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = topT,times = timeName, outputFolder = stationResFolder)
-    radiosonde_timeseries_plots(description = "Inversion Top Height", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = topZ, times = timeName,outputFolder = stationResFolder)
+    topT = [sub_ds["inversion_top_t"].values for sub_ds in sub_data]
+    topZ = [sub_ds["inversion_top_z"].values for sub_ds in sub_data]
+    topP = [sub_ds["inversion_top_p"].values for sub_ds in sub_data]
+    timeseries_plots(description = "SBI Frequency", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = freq, times = timeName, outputFolder = stationResFolder)
+    timeseries_plots(description = "SBI Intensity", xaxis = "Year", yaxis = "Lapse Rate (K m-1)", xvar = years, yvar = intensity, times = timeName, outputFolder = stationResFolder)
+    timeseries_plots(description = "SBI Strength", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = strength,times = timeName, outputFolder = stationResFolder)
+    timeseries_plots(description = "SBI Depth", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = depth, times = timeName,outputFolder = stationResFolder)
+    timeseries_plots(description =  "Inversion Top Temperature", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = topT,times = timeName, outputFolder = stationResFolder)
+    timeseries_plots(description = "Inversion Top Height", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = topZ, times = timeName,outputFolder = stationResFolder)
+    timeseries_plots(description = "Inversion Top Pressure", xaxis = "Year", yaxis = "Pressure (hpa)", xvar = years, yvar = topP, times = timeName,outputFolder = stationResFolder)
     
 
 
@@ -312,23 +317,22 @@ def radiosonde_plots(dataset, resultsFolder):
     diF = [sub_ds["diurnal_contrast_F"].values for sub_ds in sub_data2]
     diZ = [sub_ds["diurnal_contrast_Z"].values for sub_ds in sub_data2]
     impact = [sub_ds["sbi_impact"].values for sub_ds in sub_data2]
-    radiosonde_timeseries_plots(description = "Diurnal Strength Contrast", xaxis = "Year", yaxis = "Temperature(K)", xvar = years, yvar = diT, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    radiosonde_timeseries_plots(description = "Diurnal Frequency Contrast", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = diF, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    radiosonde_timeseries_plots(description = "Diurnal Depth Contrast", xaxis = "Year", yaxis = "Depth(m)", xvar = years, yvar = diZ, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    radiosonde_timeseries_plots(description = "SBI Impact", xaxis = "Year", yaxis = "Impact temperature(K)", xvar = years, yvar = impact, times = ["January", "February", "December"], outputFolder = stationResFolder, singleHour = True, timeless = True)
+    timeseries_plots(description = "Diurnal Strength Contrast", xaxis = "Year", yaxis = "Temperature(K)", xvar = years, yvar = diT, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    timeseries_plots(description = "Diurnal Frequency Contrast", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = diF, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    timeseries_plots(description = "Diurnal Depth Contrast", xaxis = "Year", yaxis = "Depth(m)", xvar = years, yvar = diZ, times = timeName2, outputFolder = stationResFolder, singleHour = True)
+    timeseries_plots(description = "SBI Impact", xaxis = "Year", yaxis = "Impact temperature(K)", xvar = years, yvar = impact, times = ["January", "February", "December"], outputFolder = stationResFolder, singleHour = True, timeless = True)
 
     #2. Vertical plot
     #Also in time_monthly so take grouped1
     tempTrend = dataset["temperature_trend"].values 
     pressure = [sub_ds["pressure"].values for sub_ds in sub_data]
-    radiosonde_timeseries_plots(description = "Temperature Trend", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrend, yvar = pressure, times = timeName, outputFolder = stationResFolder, vertical = True)
+    timeseries_plots(description = "Temperature Trend", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrend, yvar = pressure, times = timeName, outputFolder = stationResFolder, vertical = True)
 
     #3. Table for trends
-    radiosonde_table(dataset, outputFolder = stationResFolder)
+    trend_table(dataset, outputFolder = stationResFolder)
 
 
-
-def radiosonde_timeseries_plots(description, xaxis, yaxis, xvar, yvar, times = None, outputFolder = "", yvar2 = None, singleHour = False, vertical = False, timeless = False):
+def timeseries_plots(description, xaxis, yaxis, xvar, yvar, times = None, outputFolder = "", yvar2 = None, singleHour = False, vertical = False, timeless = False):
     #For sbi: freq, strength, depth, intensity, impact, top height, top temp, 
     if singleHour:
         fig, axes = plt.subplots(1, 3, figsize=(15, 8))
@@ -370,8 +374,7 @@ def radiosonde_timeseries_plots(description, xaxis, yaxis, xvar, yvar, times = N
     plt.savefig(os.path.join(outputFolder,f"{title}.png"))
 
 
-
-def radiosonde_table(dataset, outputFolder):
+def trend_table(dataset, outputFolder):
     groupTrend = dataset.groupby(dataset.month_hour)
     timeKey3 = list(groupTrend.groups.keys())
     sub_data3 = [sub_ds for _, sub_ds in groupTrend]
@@ -439,10 +442,9 @@ def radiosonde_table(dataset, outputFolder):
     plt.savefig(os.path.join(outputFolder,"sbi_trends_table.png"), dpi=300, bbox_inches="tight")
     
 
-
 if __name__ == "__main__":
     #dataset = xr.open_dataset(r"D:\McGill\Atoc396\ArcticClimat\Data&Model\Radiosonde\NC\71917_results.nc", chunks={'time': 10})
     #radiosonde_plots(dataset, "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde", "71917")
 
     dataset = xr.open_dataset(r"D:\McGill\Atoc396\ArcticClimat\Data&Model\Radiosonde\NC\71082_results.nc", chunks={'time': 10})
-    radiosonde_plots(dataset, "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde")
+    #climatology_plots(dataset, "D:/McGill/Atoc396/ArcticClimat/Figures/Radiosonde")

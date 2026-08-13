@@ -1,10 +1,11 @@
 import xarray as xr
 import os
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 
-def era5_data_format(dataloc, spData):
+def era5_data_format1(dataloc, spData):
         #load the data
         arcticData = xr.open_dataset(dataloc,  chunks={'time': 10})
         arcticData = arcticData.rename({"valid_time":"time"})
@@ -70,6 +71,9 @@ def era5_sp_data_format(dataloc):
         datasets[2].attrs["Month"] = "February"
 
         return datasets
+
+#ABOVE WERE FIRST ATTEMPS OF RECREATING RESULTS, BELOW IS THE ACTUALLY USED CODES 
+
 
 def radiosonde_assemble_to_nc(csvFolder,coords = ["latitude", "longitude"], overwrite =False):
         years = [f for f in os.listdir(csvFolder) if os.path.isdir(os.path.join(csvFolder,f))]
@@ -223,13 +227,51 @@ def radiosonde_monthly_average(monthlyFolder, year, month):
         
 #now need to figure out the time indices
 
+
+#Here we average all the coordinates to 1 point for the site and take care of the other little problems
+def era5_data_format(levelData, surfaceData, siteID, timePeriod = "", overwrite = True):
+        filename = f"Data&Model/ERA5/{siteID}/ERA5_{timePeriod}_{siteID}.nc"
+        if os.path.isfile(filename) and overwrite == False:    #Skip if already exist and don't want to do changes to it
+                print(f"{siteID} NC file already assembled")
+                ds = xr.open_dataset(filename)
+                return ds
+        print(f"Formating ERA5 {timePeriod} data")
+        level = xr.open_dataset(levelData,chunks={'time': 10}, engine='netcdf4')
+        surface = xr.open_dataset(surfaceData,chunks={'time': 10}, engine='netcdf4')
+
+        surface['sp'] = surface['sp'] / 100.0
+        surface['sp'].attrs['units'] = 'hPa'
+        
+        data = xr.merge([level, surface], compat = 'override')
+
+
+        data = data.mean(dim="longitude", skipna=True)    
+        weights = np.cos(np.deg2rad(data.latitude))
+        weighted_lat = data.weighted(weights)
+        finalData = weighted_lat.mean(dim="latitude", skipna=True)
+
+        finalData = finalData.rename({
+                "pressure_level" : "pressure",
+                "valid_time" : "time"
+
+        })
+        #Make sure the pressures are in decreasing order
+        if np.all(np.diff(finalData.pressure.values) > 0): 
+                finalData = finalData.isel(pressure=slice(None, None, -1))
+
+        finalData.attrs["SiteName"] = siteID
+
+
+        finalData.to_netcdf(filename)
+        return finalData
+
                
 
 
 
 
 if __name__ == "__main__":
-        radiosonde_assemble_to_nc("D:/McGill/Atoc396/ArcticClimat/Data&Model/Radiosonde/CSV/71917", [79.989,-85.938], overwrite=True)
+        radiosonde_assemble_to_nc("Data&Model/Radiosonde/CSV/04220", [68.708,-52.852], overwrite=True)
 
 
 
