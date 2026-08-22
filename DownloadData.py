@@ -8,141 +8,6 @@ import pandas as pd
 from datetime import datetime
 from urllib3.util.retry import Retry
 
-
-
-def era5_monthly_level_data_load(coordinate = [90, -180, 66.5, 180], siteID = "arctic"):
-    filename = f"Data&Model/ERA5/{siteID}/ERA5_monthly_level_{siteID}_raw.nc"
-
-    #2 if statement to check if the data is already downloaded or converted to nc
-    if os.path.isfile(filename):
-        print(f"ERA5 level {siteID} Dataset present")
-        return filename
-        #API download request
-    else:
-        print("Downloading monthly level data")
-        dataset = "reanalysis-era5-pressure-levels-monthly-means"
-        request = {
-            "product_type": ["monthly_averaged_reanalysis"],
-            "variable": [
-                "specific_humidity",
-                "temperature"
-            ],
-            "pressure_level": [
-                "1", "2", "3",
-                "5", "7", "10",
-                "20", "30", "50",
-                "70",
-                "100", "125", "150",
-                "175", "200", "225",
-                "250", "300", "350",
-                "400", "450", "500",
-                "550", "600", "650",
-                "700", "750", "775",
-                "800", "825", "850",
-                "875", "900", "925",
-                "950", "975", "1000"
-            ],
-            "year": [
-                #"1940", "1941", "1942",
-                #"1943", "1944", "1945",
-                #"1946", "1947", "1948",
-                #"1949", "1950", "1951",
-                #"1952", "1953", "1954",
-                #"1955", "1956", "1957",
-                #"1958", "1959", "1960",
-                #"1961", "1962", "1963",
-                #"1964", "1965", "1966",
-                #"1967", "1968", "1969",
-                #"1970", "1971", "1972",
-                #"1973", "1974", "1975",
-                #"1976", 
-                "1977", "1978",
-                "1979", "1980", "1981",
-                "1982", "1983", "1984",
-                "1985", "1986", "1987",
-                "1988", "1989", "1990",
-                "1991", "1992", "1993",
-                "1994", "1995", "1996",
-                "1997", "1998", "1999",
-                "2000", "2001", "2002",
-                "2003", "2004", "2005",
-                "2006", "2007", "2008",
-                "2009", "2010", "2011",
-                "2012", "2013", "2014",
-                "2015", "2016", "2017",
-                "2018", "2019", "2020",
-                "2021", "2022", "2023",
-                "2024", "2025"
-            ],
-            "month": ["01", "02", "12"],
-            "time": ["00:00"],
-            "data_format": "netcdf",
-            "download_format": "unarchived",
-            "area": coordinate #definition of the arctic circle
-        }
-
-        client = cdsapi.Client()
-        client.retrieve(dataset, request).download(filename)
-
-    return filename
-
-def era5_monthly_surface_data_load(coordinate = [90, -180, 66.5, 180], siteID = "arctic" ):
-    filename = f"Data&Model/ERA5/{siteID}/ERA5_monthly_surface_{siteID}_raw.nc"
-
-    #2 if statement to check if the data is already downloaded or converted to nc
-    if os.path.isfile(filename):
-        print(f"ERA5 Surface monthly {siteID} Data present")
-        return filename
-        #API download request
-    else:
-        print("Downloading monthly surface pressure data")
-        dataset = "reanalysis-era5-single-levels-monthly-means"
-        request = {
-            "product_type": ["monthly_averaged_reanalysis_by_hour_of_day"],
-            "variable": ["surface_pressure", "2m_temperature", "geopotential"],
-            "year": [
-                #"1940", "1941", "1942",
-                #"1943", "1944", "1945",
-                #"1946", "1947", "1948",
-                #"1949", "1950", "1951",
-                #"1952", "1953", "1954",
-                #"1955", "1956", "1957",
-                #"1958", "1959", "1960",
-                #"1961", "1962", "1963",
-                #"1964", "1965", "1966",
-                #"1967", "1968", "1969",
-                #"1970", "1971", "1972",
-                #"1973", "1974", "1975",
-                #"1976", 
-                "1977", "1978",
-                "1979", "1980", "1981",
-                "1982", "1983", "1984",
-                "1985", "1986", "1987",
-                "1988", "1989", "1990",
-                "1991", "1992", "1993",
-                "1994", "1995", "1996",
-                "1997", "1998", "1999",
-                "2000", "2001", "2002",
-                "2003", "2004", "2005",
-                "2006", "2007", "2008",
-                "2009", "2010", "2011",
-                "2012", "2013", "2014",
-                "2015", "2016", "2017",
-                "2018", "2019", "2020",
-                "2021", "2022", "2023",
-                "2024", "2025"
-            ],
-            "month": ["01", "02", "12"],
-            "time": ["00:00","12:00"],
-            "data_format": "netcdf",
-            "download_format": "unarchived",
-            "area": coordinate
-        }
-
-        client = cdsapi.Client()
-        client.retrieve(dataset, request).download(filename)
-    return filename
-
 def radiosonde_data_download(csvFolder, station_number, overwrite = False):
 
     station_path = os.path.join(csvFolder, station_number)
@@ -156,7 +21,7 @@ def radiosonde_data_download(csvFolder, station_number, overwrite = False):
 
 
 
-    start_year = 1982 #normally from 1977
+    start_year = 1978 #normally from 1978 1977 only has DEC
     end_year =2025
     years = np.linspace(start_year,end_year, num = end_year-start_year+1 ).astype(int).astype(str)
 
@@ -265,7 +130,7 @@ def era5_hourly_level_data_load(coordinate= [90, -180, 66.5, 180], siteID = "arc
                 "temperature"
             ],
             "year": [
-                "1977", "1978",
+                "1978",
                 "1979", "1980", "1981",
                 "1982", "1983", "1984",
                 "1985", "1986", "1987",
@@ -322,11 +187,11 @@ def era5_hourly_level_data_load(coordinate= [90, -180, 66.5, 180], siteID = "arc
 
     return filename
 
-def era5_hourly_surface_data_load(coordinate= [90, -180, 66.5, 180], siteID = "arctic"):
+def era5_hourly_surface_data_load(coordinate= [90, -180, 66.5, 180], siteID = "arctic", overwrite = False):
     filename = f"Data&Model/ERA5/{siteID}/ERA5_hourly_surface_{siteID}_raw.nc"
 
     #2 if statement to check if the data is already downloaded or converted to nc
-    if os.path.isfile(filename):
+    if os.path.isfile(filename) and overwrite == False:
         print(f"ERA5 {siteID} Hourly Surface Data present")
         return filename
         #API download request
@@ -340,7 +205,7 @@ def era5_hourly_surface_data_load(coordinate= [90, -180, 66.5, 180], siteID = "a
                 "surface_pressure",
             ],
             "year": [
-                "1977", "1978",
+                "1978",
                 "1979", "1980", "1981",
                 "1982", "1983", "1984",
                 "1985", "1986", "1987",
@@ -382,8 +247,8 @@ def era5_hourly_surface_data_load(coordinate= [90, -180, 66.5, 180], siteID = "a
     return filename
 
 
-def era5_download(dataset, product_type, variables, filename, coordinate=[90, -180, 66.5, 180], siteID="arctic", monthly = True, surface = True):
-    if os.path.isfile(filename):
+def era5_download(dataset, product_type, variables, filename, coordinate=[90, -180, 66.5, 180], siteID="arctic", overwrite = False):
+    if os.path.isfile(filename) and overwrite == False:
         print(f"{dataset} Data present")
         return filename
     client = cdsapi.Client()
@@ -422,90 +287,47 @@ def era5_download(dataset, product_type, variables, filename, coordinate=[90, -1
                 
             print(f"Downloading: Year {yr}, Month {mth}...")
 
-            if monthly == True and surface == False:
-                request = {
-                    "product_type": product_type,
-                    "variable": variables,
-                    "pressure_level": [
-                        "1", "2", "3", "5", "7", "10", "20", "30", "50", "70",
-                        "100", "125", "150", "175", "200", "225", "250", "300",
-                        "350", "400", "450", "500", "550", "600", "650", "700",
-                        "750", "775", "800", "825", "850", "875", "900", "925",
-                        "950", "975", "1000"
+
+
+            request = {
+                        "product_type": product_type,
+                        "variable": variables,
+                        "year": [yr],
+                        "month": [mth],  # Single month request
+                        "day": [
+                            "01", "02", "03",
+                            "04", "05", "06",
+                            "07", "08", "09",
+                            "10", "11", "12",
+                            "13", "14", "15",
+                            "16", "17", "18",
+                            "19", "20", "21",
+                            "22", "23", "24",
+                            "25", "26", "27",
+                            "28", "29", "30",
+                            "31"
+                        ],                            
+                        "time": ["00:00", "12:00"],
+                        "pressure_level": [
+                        "1", "2", "3",
+                        "5", "7", "10",
+                        "20", "30", "50",
+                        "70", "100", "125",
+                        "150", "175", "200",
+                        "225", "250", "300",
+                        "350", "400", "450",
+                        "500", "550", "600",
+                        "650", "700", "750",
+                        "775", "800", "825",
+                        "850", "875", "900",
+                        "925", "950", "975",
+                        "1000"
                     ],
-                    "year": [yr],
-                    "month": [mth],  # Single month request
-                    "time": ["00:00","12:00"],
-                    "data_format": "netcdf",
-                    "download_format": "unarchived",
-                    "area": coordinate
+                        "data_format": "netcdf",
+                        "download_format": "unarchived",
+                        "area": coordinate
                     }
-            elif monthly == False and surface == False:
-                request = {
-                            "product_type": product_type,
-                            "variable": variables,
-                            "year": [yr],
-                            "month": [mth],  # Single month request
-                            "day": [
-                                "01", "02", "03",
-                                "04", "05", "06",
-                                "07", "08", "09",
-                                "10", "11", "12",
-                                "13", "14", "15",
-                                "16", "17", "18",
-                                "19", "20", "21",
-                                "22", "23", "24",
-                                "25", "26", "27",
-                                "28", "29", "30",
-                                "31"
-                            ],                            
-                            "time": ["00:00", "12:00"],
-                            "data_format": "netcdf",
-                            "download_format": "unarchived",
-                            "area": coordinate
-                        }
-            elif monthly == True and surface == True:
-                request = {
-                    "product_type": product_type,
-                    "variable": variables,
-                    "pressure_level": [
-                        "1", "2", "3", "5", "7", "10", "20", "30", "50", "70",
-                        "100", "125", "150", "175", "200", "225", "250", "300",
-                        "350", "400", "450", "500", "550", "600", "650", "700",
-                        "750", "775", "800", "825", "850", "875", "900", "925",
-                        "950", "975", "1000"
-                    ],
-                    "year": [yr],
-                    "month": [mth],  # Single month request
-                    "time": ["00:00","12:00"],
-                    "data_format": "netcdf",
-                    "download_format": "unarchived",
-                    "area": coordinate
-                    }
-            else:
-                request = {
-                            "product_type": product_type,
-                            "variable": variables,
-                            "year": [yr],
-                            "month": [mth],  # Single month request
-                            "day": [
-                                "01", "02", "03",
-                                "04", "05", "06",
-                                "07", "08", "09",
-                                "10", "11", "12",
-                                "13", "14", "15",
-                                "16", "17", "18",
-                                "19", "20", "21",
-                                "22", "23", "24",
-                                "25", "26", "27",
-                                "28", "29", "30",
-                                "31"
-                            ],                            
-                            "time": ["00:00", "12:00"],
-                            "data_format": "netcdf",
-                            "download_format": "unarchived",
-                            "area": coordinate
-                        }
+
             
             try:
                 client.retrieve(dataset, request).download(chunk_filename)
@@ -521,7 +343,8 @@ def era5_download(dataset, product_type, variables, filename, coordinate=[90, -1
     try:
         # combine='by_coords' handles both year and month dimensions seamlessly
         ds_merged = xr.open_mfdataset(temp_files, combine='by_coords')
-        
+        ds_merged.load()
+        print("Merged and converting to NC")
         # Save to single combined NetCDF file
         ds_merged.to_netcdf(filename)
         print(f"Successfully merged all chunks into: {filename}")

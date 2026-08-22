@@ -65,83 +65,88 @@ def process_radiosonde_data():
     os.makedirs(csvFolder, exist_ok=True)
     figFolder = "Figures/Radiosonde"
     os.makedirs(figFolder, exist_ok=True)
-    station_numbers = ["71082","71917","71924","04320" ,"01028", "01004"]
-    coordinates = [[82.493, -62.344],[79.989,-85.938], [74.705,-94.969],[76.769,-18.672] , [74.504, 19.001], [78.923, 11.923]]
-
-
-    for station_number,  coordinate in zip(station_numbers,  coordinates):
-        station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number)
-        radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, coordinate)
-        radiosonde_data_res = Calculation.radiosonde_climatology(radiosonde_data)
+    station_numbers = ["71082","04220"] 
+   
+    for station_number in station_numbers:
+        station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number, overwrite=False)
+        data_Lack = Plotting.radiosonde_data_count(csvFolder, figFolder, station_number)
+        radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, overwrite=True)
+        radiosonde_data = Calculation.radiosonde_daily_climatology(radiosonde_data)
+        radiosonde_results = Calculation.radiosonde_monthly_climatology(radiosonde_data, data_Lack, overwrite= True)
         print(f"{station_number} completed")
-        Plotting.climatology_plots(radiosonde_data_res,figFolder)
+        Plotting.climatology_plots(radiosonde_results,figFolder)
+        Plotting.vapor_presence_plot(radiosonde_data,figFolder)
+
+
     
 
 def process_era5_site_data():
     csvFolder = "Data&Model/Radiosonde/CSV/"
     figFolder = "Figures/ERA5"
-    station_number = "71082"
-    coordinate = [82.493, -62.344]
-    dataFolder = f"Data&Model\ERA5/{station_number}"
-    os.makedirs(dataFolder, exist_ok=True)
+    os.makedirs(figFolder, exist_ok=True)
+    station_numbers = ["04220"] #["71082","04220"]
+    coordinates = [[68.708, -52.852]] #[[82.493, -62.344],[68.708, -52.852]]
+    for station_number, coordinate in zip(station_numbers, coordinates):
+        dataFolder = f"Data&Model/ERA5/{station_number}"
+        os.makedirs(dataFolder, exist_ok=True)
+        print(f"Processing {station_number}")
+        exp_coordinates = Calculation.radiosonde_coordinates(os.path.join(csvFolder,station_number), [coordinate[0],coordinate[1],coordinate[0],coordinate[1]])
+        print(exp_coordinates)
+        #exp_coordinates = [84.7769, -81.5466, 78.6372, -47.5212] #from executing the above code
 
-    #exp_coordinates = Calculation.radiosonde_coordinates(os.path.join(csvFolder,station_number), [coordinate[0],coordinate[1],coordinate[0],coordinate[1]])
-    #print(exp_coordinates)
-    exp_coordinates = [84.7769, -81.5466, 78.6372, -47.5212] #from executing the above code
+        surfaceDataHourly = DownloadData.era5_hourly_surface_data_load(exp_coordinates, station_number, overwrite= False)
+        levelDataHourly = DownloadData.era5_download(dataset = "reanalysis-era5-pressure-levels",
+                                                    product_type= ["reanalysis"],
+                                                    variables= ["specific_humidity","temperature"],
+                                                    filename = f"Data&Model/ERA5/{station_number}/ERA5_hourly_level_{station_number}_raw.nc", 
+                                                    coordinate=exp_coordinates, 
+                                                    siteID = station_number,
+                                                    overwrite = True)
+        
+        hourlyData = FormatData.era5_data_format(levelDataHourly, surfaceDataHourly, siteID = station_number, timePeriod = "daily", overwrite=True)
+        dailyData = Calculation.era5_daily_climatology(hourlyData, overwrite= True)
+        resultsData = Calculation.era5_monthly_climatology(dailyData, overwrite=True)
+        Plotting.climatology_plots(resultsData, figFolder)
 
-    #levelDataHourly = DownloadData.era5_hourly_level_data_load(exp_coordinates, station_number)
-    surfaceDataHourly = DownloadData.era5_hourly_surface_data_load(exp_coordinates, station_number)
-    #levelDataMonthly = DownloadData.era5_monthly_level_data_load(exp_coordinates, station_number)
-    surfaceDataMonthly = DownloadData.era5_monthly_surface_data_load(exp_coordinates, station_number)
+def one_time(dataset = "radiosonde"):
+    if dataset == "radiosonde":
+        csvFolder = "Data&Model/Radiosonde/CSV/"
+        figFolder = "Figures/Radiosonde"
+        station_number = "71082" #"71081"
+        station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number, overwrite=False)
+        data_Lack = Plotting.radiosonde_data_count(csvFolder, figFolder, station_number)
+        radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, overwrite=True)
+        radiosonde_data = Calculation.radiosonde_daily_climatology(radiosonde_data)
+        radiosonde_results = Calculation.radiosonde_monthly_climatology(radiosonde_data,data_Lack, overwrite= True)
+        Plotting.climatology_plots(radiosonde_results, figFolder)
 
-    #Longer downloading process because the files are too big
-    levelDataHourly = DownloadData.era5_download(dataset = "reanalysis-era5-pressure-levels",
-                                                 product_type= ["reanalysis"],
-                                                 variables= ["specific_humidity","temperature"],
-                                                 filename = f"Data&Model/ERA5/{station_number}/ERA5_hourly_level_{station_number}_raw.nc", 
-                                                 coordinate=exp_coordinates, 
-                                                 siteID = station_number,
-                                                 monthly= False,
-                                                 surface = False)
-    
-    levelDataMonthly = DownloadData.era5_download(dataset = "reanalysis-era5-pressure-levels-monthly-means",
-                                                 product_type= ["monthly_averaged_reanalysis_by_hour_of_day"],
-                                                 variables= ["specific_humidity","temperature"],
-                                                 filename = f"Data&Model/ERA5/{station_number}/ERA5_monthly_level_{station_number}_raw.nc", 
-                                                 coordinate=exp_coordinates, 
-                                                 siteID = station_number,
-                                                 surface = False)
+    if dataset == "ERA5":
+        csvFolder = "Data&Model/Radiosonde/CSV/"
+        figFolder = "Figures/ERA5"
+        os.makedirs(figFolder, exist_ok=True)
+        station_number = "71082"
+        coordinate = [82.493, -62.344]
 
-    """
-    surfaceDataMonthly = DownloadData.era5_download(dataset = "reanalysis-era5-single-levels-monthly-means_by_hour_of_day",
-                                                 product_type= ["monthly_averaged_reanalysis"],
-                                                 variables= ["surface_pressure", "2m_temperature"],
-                                                 filename = f"Data&Model/ERA5/{station_number}/ERA5_monthly_surface_{station_number}_raw.nc", 
-                                                 coordinate=exp_coordinates, 
-                                                 siteID = station_number)
-    surfaceDataHourly = DownloadData.era5_download(dataset = "reanalysis-era5-single-levels",
-                                                     product_type= ["reanalysis"],
-                                                     variables= ["2m_temperature","surface_pressure"],
-                                                     filename = f"Data&Model/ERA5/{station_number}/ERA5_hourly_surface_{station_number}_raw.nc", 
-                                                     coordinate=exp_coordinates, 
-                                                     siteID = station_number,
-                                                     monthly= False)
-    """
-    monthlyData = FormatData.era5_data_format(levelDataMonthly, surfaceDataMonthly, siteID = station_number, timePeriod = "monthly")
-    hourlyData = FormatData.era5_data_format(levelDataHourly, surfaceDataHourly, siteID = station_number, timePeriod = "hourly")
+        dataFolder = f"Data&Model/ERA5/{station_number}"
+        os.makedirs(dataFolder, exist_ok=True)
+        print(f"Processing {station_number}")
+        #exp_coordinates = Calculation.radiosonde_coordinates(os.path.join(csvFolder,station_number), [coordinate[0],coordinate[1],coordinate[0],coordinate[1]])
+        #print(exp_coordinates)
+        exp_coordinates = [84.7769, -81.5466, 78.6372, -47.5212] #from executing the above code
 
-    resultsData = Calculation.era5_monthly_climatology(hourlyData, monthlyData, station_number, overwrite= True)
-    Plotting.climatology_plots(resultsData, figFolder)
-
-def one_time():
-    csvFolder = "Data&Model/Radiosonde/CSV/"
-    figFolder = "Figures/Radiosonde"
-    station_number = "71082" #"04220"
-    coordinate = [82.493, -62.344] #[68.708,-52.852]
-    station_folder_csv = DownloadData.radiosonde_data_download(csvFolder,station_number, overwrite=False)
-    radiosonde_data = FormatData.radiosonde_assemble_to_nc(station_folder_csv, coordinate, overwrite=True)
-    radiosonde_results = Calculation.radiosonde_climatology(radiosonde_data, overwrite= True)
-    Plotting.climatology_plots(radiosonde_results, figFolder)
+        surfaceDataHourly = DownloadData.era5_hourly_surface_data_load(exp_coordinates, station_number, overwrite= False)
+        levelDataHourly = DownloadData.era5_download(dataset = "reanalysis-era5-pressure-levels",
+                                                    product_type= ["reanalysis"],
+                                                    variables= ["specific_humidity","temperature"],
+                                                    filename = f"Data&Model/ERA5/{station_number}/ERA5_hourly_level_{station_number}_raw.nc", 
+                                                    coordinate=exp_coordinates, 
+                                                    siteID = station_number,
+                                                    overwrite = False)
+        
+        hourlyData = FormatData.era5_data_format(levelDataHourly, surfaceDataHourly, siteID = station_number, timePeriod = "daily", overwrite=False)
+        dailyData = Calculation.era5_daily_climatology(hourlyData, overwrite= True)
+        resultsData = Calculation.era5_monthly_climatology(dailyData, overwrite=True)
+        Plotting.climatology_plots(resultsData, figFolder)
 
 
 

@@ -75,7 +75,7 @@ def era5_sp_data_format(dataloc):
 #ABOVE WERE FIRST ATTEMPS OF RECREATING RESULTS, BELOW IS THE ACTUALLY USED CODES 
 
 
-def radiosonde_assemble_to_nc(csvFolder,coords = ["latitude", "longitude"], overwrite =False):
+def radiosonde_assemble_to_nc(csvFolder, overwrite =False):
         years = [f for f in os.listdir(csvFolder) if os.path.isdir(os.path.join(csvFolder,f))]
         monthsN = ["Dec", "Jan", "Feb"]
         monthsI = ["12", "01","02"]
@@ -84,45 +84,31 @@ def radiosonde_assemble_to_nc(csvFolder,coords = ["latitude", "longitude"], over
         
         ncFolder = f"Data&Model/Radiosonde/NC"
         os.makedirs(ncFolder, exist_ok=True)
-        location = f"{ncFolder}/{site_name}.nc"
+        location = f"{ncFolder}/{site_name}_daily.nc"
         
 
         if os.path.isfile(location) and overwrite == False:    #Skip if already exist and don't want to do changes to it
                 print(f"{site_name} NC file already assembled")
                 ds = xr.open_dataset(location)
                 return ds
+        
         print(f"Assembling NC file for {site_name}")
+        if os.path.isfile(location) and overwrite == True: 
+                os.remove(location)
 
         yearlyDailyData = []
-        yearlyMonthlyData = []
 
         for monthI,monthN in zip(monthsI,monthsN):
-                
-
                 for year in years:
                         month_path = os.path.join(csvFolder, year, monthN)
                         if not os.path.isdir(month_path):
                                 continue
                         
-                        monthly_avg_data, daily_data = radiosonde_monthly_average(month_path, int(year), int(monthI))
-                        yearlyMonthlyData.append(monthly_avg_data)
+                        daily_data = radiosonde_monthly_average(month_path, int(year), int(monthI))
                         yearlyDailyData.append(daily_data)
-                if not yearlyMonthlyData:
-                        continue
-                print(f"{monthN} done")
 
-        daily = xr.concat(yearlyDailyData, dim = 'time', data_vars="all", coords="minimal",combine_attrs="override")
-        monthly = xr.concat(yearlyMonthlyData, dim = 'time_monthly', data_vars="all", coords="minimal",combine_attrs="override")
-        monthly_renamed = monthly.rename_vars({
-                v: f"{v}_monthly" for v in monthly.data_vars if v != "time_monthly"
-        })
-
-        ds = xr.merge([monthly_renamed,daily], combine_attrs="drop_conflicts")    
-        #ds.attrs["Month"] = month #Add metadata for corresponding month in the nc file
+        ds = xr.concat(yearlyDailyData, dim = 'time', data_vars="all", coords="minimal",combine_attrs="override")
         ds.attrs["SiteName"] = site_name
-        ds = ds.assign_coords(coordinates = coords)
-        ds['coordinates'].attrs["Description"] = "[Latitude,Longitude]"    
-
 
         for var in ds.data_vars:
         # If variable is stored as an object array, force convert it to float
@@ -130,53 +116,40 @@ def radiosonde_assemble_to_nc(csvFolder,coords = ["latitude", "longitude"], over
                         # Convert values using pd.to_numeric
                         cleaned_vals = pd.to_numeric(ds[var].values.ravel(), errors='coerce').reshape(ds[var].shape)
                         ds[var] = (ds[var].dims, cleaned_vals)
-                #Turn all temperature values into kelvin
-                if 'temp' in var.lower():
-                        ds[var] = ds[var] + 273.15
-                        ds[var].attrs["units"] = "K"
-
-
 
 
         ds = ds.dropna(dim="pressure", how="all")  #See if it fixes things
-        ds.to_netcdf(location, mode='w')   
+        ds.to_netcdf(location, mode='w') 
         return ds
         
 
 def radiosonde_monthly_average(monthlyFolder, year, month):
         csvFiles = [os.path.join (monthlyFolder, file) for file in os.listdir(monthlyFolder) if file.endswith(".csv") and os.path.isfile(os.path.join(monthlyFolder, file))]
 
-        unwanted_dims = ["time","longitude","latitude"]
-        target_pressures = [1000.0, 975.0, 950.0, 925.0, 900.0, 875.0, 850.0, 825.0, 800.0, 775.0,
+        unwanted_dims = ["time","longitude","latitude",
+                         "dew point temperature_C",
+                        "ice point temperature_C",
+                        "relative humidity_%",
+                        "humidity wrt ice_%",
+                        "geopotential height_m",
+                        "wind direction_degree",
+                        "wind speed_m/s"]
+        target_pressures = [1025.0, 1000.0, 975.0, 950.0, 925.0, 900.0, 875.0, 850.0, 825.0, 800.0, 775.0,
                                 750.0, 700.0, 650.0, 600.0, 550.0, 500.0, 450.0, 400.0, 350.0, 300.0,
                                 250.0, 225.0, 200.0, 175.0, 150.0, 125.0, 100.0, 70.0, 50.0, 30.0,
                                 20.0,  10.0,   7.0,   5.0,   3.0,   2.0,   1.0]
         # 1. Define your name clean-up mapping
         rename_dict = {
         "pressure_hPa": "pressure",
-        "geopotential height_m": "geopotential_height",
+        "mixing ratio_g/kg": "mixRatio",
         "temperature_C": "temperature",
-        "dew point temperature_C": "dew_point",
-        "ice point temperature_C": "ice_point",
-        "relative humidity_%": "relative_humidity",
-        "humidity wrt ice_%": "humidity_wrt_ice",
-        "mixing ratio_g/kg": "mixing_ratio",
-        "wind direction_degree": "wind_direction",
-        "wind speed_m/s": "wind_speed"
         }
 
         # 2. Define the corresponding units for attributes
         units_dict = {
         "pressure": "hPa",
-        "geopotential_height": "m",
-        "temperature": "degree_Celsius",
-        "dew_point": "degree_Celsius",
-        "ice_point": "degree_Celsius",
-        "relative_humidity": "%",
-        "humidity_wrt_ice": "%",
-        "mixing_ratio": "g/kg",
-        "wind_direction": "degrees",
-        "wind_speed": "m/s"
+        "mixRatio": "kg/kg",
+        "temperature": "k",
         }
         dailyData = []
         for csvFile in csvFiles:
@@ -184,6 +157,12 @@ def radiosonde_monthly_average(monthlyFolder, year, month):
                 data = pd.read_csv(csvFile)
                 data = data.drop(columns = unwanted_dims, errors = 'ignore')
                 data = data.rename(columns=rename_dict)
+
+                if "temperature" in data.columns:
+                        data["temperature"] = data["temperature"] + 273.15
+                if "mixRatio" in data.columns:
+                        data["mixRatio"] = pd.to_numeric(data["mixRatio"], errors="coerce")/1000  #was g/kg so convert to kg/kg
+
                 data = data.drop_duplicates(subset=["pressure"], keep="first")
                 data = data.set_index("pressure")
 
@@ -210,26 +189,13 @@ def radiosonde_monthly_average(monthlyFolder, year, month):
 
 
         daily_dataset = xr.concat(dailyData, dim= "time", data_vars="all", coords="all", combine_attrs="override")  #concat to a new "day" dimensions that will disappear when averaging
-        monthly_data = daily_dataset.groupby("time.hour").mean(dim = "time", keep_attrs = True)
-        new_timestamps = [
-        datetime(year, month, 1, h) for h in monthly_data["hour"].values
-        ]
-
-        # 3. Attach the new timestamps and swap the dimension name to 'time_monthly'
-        monthly_data = (
-                monthly_data
-                .assign_coords(time_monthly=("hour", new_timestamps))  # Attach new coordinate
-                .swap_dims({"hour": "time_monthly"})                  # Set it as the primary dimension
-                .drop_vars("hour")                                    # Drop the old 'hour' coordinate
-                )
-
-        return monthly_data, daily_dataset
+        return daily_dataset
         
 #now need to figure out the time indices
 
 
 #Here we average all the coordinates to 1 point for the site and take care of the other little problems
-def era5_data_format(levelData, surfaceData, siteID, timePeriod = "", overwrite = True):
+def era5_data_format(levelData, surfaceData, siteID, timePeriod = "daily", overwrite = True):
         filename = f"Data&Model/ERA5/{siteID}/ERA5_{timePeriod}_{siteID}.nc"
         if os.path.isfile(filename) and overwrite == False:    #Skip if already exist and don't want to do changes to it
                 print(f"{siteID} NC file already assembled")
@@ -241,20 +207,22 @@ def era5_data_format(levelData, surfaceData, siteID, timePeriod = "", overwrite 
 
         surface['sp'] = surface['sp'] / 100.0
         surface['sp'].attrs['units'] = 'hPa'
-        
-        data = xr.merge([level, surface], compat = 'override')
 
-
-        data = data.mean(dim="longitude", skipna=True)    
-        weights = np.cos(np.deg2rad(data.latitude))
-        weighted_lat = data.weighted(weights)
-        finalData = weighted_lat.mean(dim="latitude", skipna=True)
-
-        finalData = finalData.rename({
+        dataset = xr.merge([level, surface], compat = 'override')
+        dataset = finalData.rename({
                 "pressure_level" : "pressure",
-                "valid_time" : "time"
-
+                "valid_time" : "time",
+                "t" : "temperature",
+                "q" : "mixRatio"   #Rename for standarize
         })
+        finalData["mixRatio"].attrs["long_name"] = "Specific_humidity" 
+
+        #Geometric mean
+        dataset = dataset.mean(dim="longitude", skipna=True)    
+        weights = np.cos(np.deg2rad(dataset.latitude))
+        weighted_lat = dataset.weighted(weights)
+        finalData = weighted_lat.mean(dim="latitude", skipna=True)
+        
         #Make sure the pressures are in decreasing order
         if np.all(np.diff(finalData.pressure.values) > 0): 
                 finalData = finalData.isel(pressure=slice(None, None, -1))
@@ -271,7 +239,7 @@ def era5_data_format(levelData, surfaceData, siteID, timePeriod = "", overwrite 
 
 
 if __name__ == "__main__":
-        radiosonde_assemble_to_nc("Data&Model/Radiosonde/CSV/04220", [68.708,-52.852], overwrite=True)
+        radiosonde_assemble_to_nc("Data&Model/Radiosonde/CSV/71082", overwrite=False)
 
 
 
