@@ -5,6 +5,7 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.path as mpath
+import matplotlib.gridspec as gridspec
 from matplotlib.ticker import MaxNLocator, MultipleLocator
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -280,89 +281,67 @@ def era5_timeseries_plot(dataset, foldername, description: str, month: str):
 
 #ABOVE WERE FIRST ATTEMPS OF RECREATING RESULTS, BELOW IS THE ACTUALLY USED CODES 
 
-def climatology_plots(dataset, resultsFolder):
-    stationID = dataset.attrs["SiteName"]
-    stationResFolder = os.path.join(resultsFolder,stationID)
-    os.makedirs(stationResFolder, exist_ok=True)
+def climatology_plots(datasetE,datasetR, resultsFolder):
+    stationID = datasetE.attrs["SiteName"]
+
     print(f"Plotting Data for {stationID}")
 
     #1.Timeseries plots
-    #Separating the data into each of the 6 timesteps
-    grouped1 = dataset.groupby(dataset.time.dt.strftime("%m-%H"))
-    timeKey = list(grouped1.groups.keys())
-    sub_data = [sub_ds for _, sub_ds in grouped1]
-    timeName = [datetime.strptime(key, "%m-%H").strftime("%B %H:00") for key in timeKey]  #Name of the time steps for each graphs
-    years = [np.unique(sub_ds.time.dt.year.values) for sub_ds in sub_data]
+    #Getting the variables
+    (timeNameE, yearsE, freqE, strengthE, depthE, intensityE, topTE, topPE, surfTE, surfPE, pressureE, timeName2E, years2E, diTE, diFE, diZE, impactE) = time_grouping(datasetE)
+    (timeNameR, yearsR, freqR, strengthR, depthR, intensityR, topTR, topPR, surfTR, surfPR, pressureR, timeName2R, years2R, diTR, diFR, diZR, impactR) = time_grouping(datasetR)
 
-    freq = [sub_ds["sbi_frequency"].values for sub_ds in sub_data]
-    strength = [sub_ds["sbi_strength"].values for sub_ds in sub_data]
-    depth = [sub_ds["sbi_depth"].values for sub_ds in sub_data]
-    intensity = [sub_ds["sbi_intensity"].values for sub_ds in sub_data]
-    topT = [sub_ds["inversion_top_temp"].values for sub_ds in sub_data]
-    topP = [sub_ds["inversion_top_pressure"].values for sub_ds in sub_data]
-    timeseries_plots(description = "SBI Frequency", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = freq, times = timeName, outputFolder = stationResFolder)
-    timeseries_plots(description = "SBI Intensity", xaxis = "Year", yaxis = "Lapse Rate (K m-1)", xvar = years, yvar = intensity, times = timeName, outputFolder = stationResFolder)
-    timeseries_plots(description = "SBI Strength", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = strength,times = timeName, outputFolder = stationResFolder)
-    timeseries_plots(description = "SBI Depth", xaxis = "Year", yaxis = "Height (m)", xvar = years, yvar = depth, times = timeName,outputFolder = stationResFolder)
-    timeseries_plots(description =  "Inversion Top Temperature", xaxis = "Year", yaxis = "Temperature (K)", xvar = years, yvar = topT,times = timeName, outputFolder = stationResFolder)
-    timeseries_plots(description = "Inversion Top Pressure", xaxis = "Year", yaxis = "Pressure (hpa)", xvar = years, yvar = topP, times = timeName,outputFolder = stationResFolder, vertical=True)
-    
+    # Separating the data into each of the 6 timesteps
+    timeseries_plots(description=["SBI Frequency", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Frequency", xvar=yearsE, yvar=freqE, yvar2=freqR, times=timeNameE, outputFolder=resultsFolder)
+    timeseries_plots(description=["SBI Lapse Rate", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Lapse Rate (K m-1)", xvar=yearsE, yvar=intensityE, yvar2=intensityR, times=timeNameE, outputFolder=resultsFolder)
+    timeseries_plots(description=["SBI Strength", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Temperature (K)", xvar=yearsE, yvar=strengthE, yvar2=strengthR, times=timeNameE, outputFolder=resultsFolder)
+    timeseries_plots(description=["SBI Depth", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Height (m)", xvar=yearsE, yvar=depthE, yvar2=depthR, times=timeNameE, outputFolder=resultsFolder)
 
+    timeseries_plots(description=["Inversion Top Temperature", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Temperature (K)", xvar=yearsE, yvar=topTE, yvar2=topTR, times=timeNameE, outputFolder=resultsFolder)
+    timeseries_plots(description=["Inversion Top Pressure", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Pressure (hpa)", xvar=yearsE, yvar=topPE, yvar2=topPR, times=timeNameE, outputFolder=resultsFolder, vertical=True)
+    timeseries_plots(description=["Surface Pressure", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Pressure (hpa)", xvar=yearsE, yvar=surfPE, yvar2=surfPR, times=timeNameE, outputFolder=resultsFolder, vertical=True)
+    timeseries_plots(description=["Surface Temperature", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Temperature (K)", xvar=yearsE, yvar=surfTE, yvar2=surfTR, times=timeNameE, outputFolder=resultsFolder)
 
-    grouped2 = dataset.groupby(dataset.year_month.dt.strftime("%m"))
-    timeKey2 = list(grouped2.groups.keys())
-    sub_data2 = [sub_ds for _, sub_ds in grouped2]
-    timeName2 = [datetime.strptime(key, "%m").strftime("%B") for key in timeKey2]  #Name of the time steps for each graphs
-    years = [np.unique(sub_ds.year_month.dt.year.values) for sub_ds in sub_data2]
-
-    diT = [sub_ds["diurnal_contrast_T"].values for sub_ds in sub_data2]
-    diF = [sub_ds["diurnal_contrast_F"].values for sub_ds in sub_data2]
-    diZ = [sub_ds["diurnal_contrast_Z"].values for sub_ds in sub_data2]
-    impact = [sub_ds["sbi_impact"].values for sub_ds in sub_data2]
-    timeseries_plots(description = "Diurnal Strength Contrast", xaxis = "Year", yaxis = "Temperature(K)", xvar = years, yvar = diT, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    timeseries_plots(description = "Diurnal Frequency Contrast", xaxis = "Year", yaxis = "Frequency", xvar = years, yvar = diF, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    timeseries_plots(description = "Diurnal Depth Contrast", xaxis = "Year", yaxis = "Depth(m)", xvar = years, yvar = diZ, times = timeName2, outputFolder = stationResFolder, singleHour = True)
-    timeseries_plots(description = "SBI Impact", xaxis = "Year", yaxis = "Impact temperature(K)", xvar = years, yvar = impact, times = ["January", "February", "December"], outputFolder = stationResFolder, singleHour = True, timeless = True)
+    # 3 timesteps
+    timeseries_plots(description=["Diurnal Strength Contrast", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Temperature(K)", xvar=yearsE, yvar=diTE, yvar2=diTR, times=timeName2E, outputFolder=resultsFolder, singleHour=True,timeless=True)
+    timeseries_plots(description=["Diurnal Frequency Contrast", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Frequency", xvar=yearsE, yvar=diFE, yvar2=diFR, times=timeName2E, outputFolder=resultsFolder, singleHour=True,timeless=True)
+    timeseries_plots(description=["Diurnal Depth Contrast", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Depth(m)", xvar=yearsE, yvar=diZE, yvar2=diZR, times=timeName2E, outputFolder=resultsFolder, singleHour=True,timeless=True)
+    timeseries_plots(description=["SBI Impact", ("ERA5", "Radiosonde")], xaxis="Year", yaxis="Impact temperature(°C month^-1)", xvar=yearsE, yvar=impactE, yvar2=impactR, times=["January", "February", "December"], outputFolder=resultsFolder, singleHour=True, timeless=True)
 
     #2. Vertical plot
     #Also in time_monthly so take grouped1
-    tempTrend = dataset["temperature_trend"].values 
-    pressure = [sub_ds["pressure"].values for sub_ds in sub_data]
-    timeseries_plots(description = "Temperature Trend", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrend, yvar = pressure, times = timeName, outputFolder = stationResFolder, vertical = True)
-
+    tempTrendE = datasetE["temperature_trend"].values
+    tempTrendR = datasetR["temperature_trend"].values 
+    timeseries_plots(description = "Temperature Trend ERA5", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrendE, yvar = pressureE, times = timeNameE, outputFolder = resultsFolder, vertical = True)
+    timeseries_plots(description = "Temperature Trend Radiosonde", xaxis = "Temperature Trend (K decade^-1)", yaxis = "Pressure(hPa)", xvar = tempTrendR, yvar = pressureR, times = timeNameE, outputFolder = resultsFolder, vertical = True)
     #3. Table for trends
-    trend_table(dataset, outputFolder = stationResFolder)
+    trend_table(datasetE, outputFolder = resultsFolder, dataName= "ERA5")
+    trend_table(datasetR, outputFolder = resultsFolder, dataName= "Radiosonde")
 
 
 def timeseries_plots(
-    description, 
-    xaxis, 
-    yaxis, 
-    xvar, 
-    yvar, 
-    times=None, 
-    outputFolder="", 
-    yvar2=None, 
-    singleHour=False, 
-    vertical=False, 
+    description,
+    xaxis,
+    yaxis,
+    xvar,
+    yvar,
+    times=None,
+    outputFolder="",
+    yvar2=None,
+    singleHour=False,
+    vertical=False,
     timeless=False,
 ):
-    dataOrigin = Path(outputFolder).name
-
     # Set global aesthetic style
-    plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
-    
-    # Modern Blue Color Palette
-    primary_color = "#005b96"    # Deep Ocean Blue
-    secondary_color = "#e65c00"  # Warm Accent Coral (for yvar2)
-    
-    # Layout dimensions
-    if singleHour:
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=False)
-    else:
-        fig, axes = plt.subplots(2, 3, figsize=(15, 8.5), sharey=False)
+    plt.style.use(
+        "seaborn-v0_8-whitegrid"
+        if "seaborn-v0_8-whitegrid" in plt.style.available
+        else "default"
+    )
 
-    axes = np.atleast_1d(axes).flatten()
+    # Modern Blue & Coral Color Palette
+    primary_color = "#005b96"  # Deep Ocean Blue
+    secondary_color = "#e65c00"  # Warm Accent Coral
 
     # Parse title and dataset naming
     if isinstance(description, (list, tuple)):
@@ -374,54 +353,126 @@ def timeseries_plots(
         dataName = [title, ""]
         doubleEntry = False
 
-    for i, ax in enumerate(axes):
-        if i >= len(xvar):
-            ax.set_visible(False)
-            continue
+    # Define Grid Dimensions
+    ncols = 3
+    nrows = 1 if singleHour else 2
+    n_subplots = len(xvar)
 
-        # Plot primary variable
+    # Figure dimensions
+    fig = plt.figure(
+        figsize=(24, 8.5 if singleHour else 16.0), constrained_layout=False
+    )
+    outer_grid = gridspec.GridSpec(nrows, ncols, figure=fig, wspace=0.35, hspace=0.35)
+
+    for i in range(nrows * ncols):
+        if i >= n_subplots:
+            break
+
+        ax_main = fig.add_subplot(outer_grid[i])
+
+        # Clean/Align Input Vectors
+        x = np.asarray(xvar[i])
+        y1 = np.asarray(yvar[i])
+
+        # Plot Main Line Data
         if doubleEntry and yvar2 is not None:
-            ax.plot(xvar[i], yvar[i], label=dataName[0], color=primary_color, linewidth=2)
-            ax.plot(xvar[i], yvar2[i], label=dataName[1], color=secondary_color, linewidth=2, linestyle="--")
-            ax.legend(frameon=True, facecolor="white", edgecolor="none", fontsize=9)
-        else:
-            ax.plot(xvar[i], yvar[i], color=primary_color, linewidth=2, label=dataName[0] if doubleEntry else None)
-            if doubleEntry:
-                ax.legend(frameon=True, facecolor="white", edgecolor="none", fontsize=9)
+            y2 = np.asarray(yvar2[i])
+            ax_main.plot(
+                x,
+                y1,
+                label=dataName[0][0] if isinstance(dataName[0], (list, tuple)) else dataName[0],
+                color=primary_color,
+                linewidth=2.5,
+            )
+            ax_main.plot(
+                x,
+                y2,
+                label=dataName[1][0] if isinstance(dataName[1], (list, tuple)) else dataName[1],
+                color=secondary_color,
+                linewidth=2.5,
+            )
+            
+            # Position Legend on Top-Left
+            ax_main.legend(
+                frameon=True, facecolor="white", edgecolor="#cccccc", fontsize=16, loc="upper left"
+            )
 
-        # Labels & Titles
-        ax.set_xlabel(xaxis, fontsize=10, fontweight="bold", labelpad=6)
-        ax.set_ylabel(yaxis, fontsize=10, fontweight="bold", labelpad=6)
+            # Compute Statistical Metrics
+            mask = ~np.isnan(y1) & ~np.isnan(y2)
+            if np.sum(mask) > 1:
+                o, m = y2[mask], y1[mask]  # y2: Benchmark, y1: Model
+                bias = np.mean(m - o)
+                rmse = np.sqrt(np.mean((m - o) ** 2))
+                r = np.corrcoef(o, m)[0, 1] if np.std(o) > 0 and np.std(m) > 0 else np.nan
+
+                stats_text = f"Bias: {bias:+.2f} | RMSE: {rmse:.2f} | Corr: {r:.2f}"
+            else:
+                stats_text = "N/A"
+
+            # Overlay Statistics Text Box directly BELOW the Title
+            ax_main.text(
+                0.5,
+                1.02,
+                stats_text,
+                transform=ax_main.transAxes,
+                fontsize=16,
+                family="monospace",
+                verticalalignment="bottom",
+                horizontalalignment="center",
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="#f8f9fa",
+                    edgecolor="#cccccc",
+                    alpha=0.95,
+                ),
+            )
+
+        else:
+            ax_main.plot(
+                x,
+                y1,
+                color=primary_color,
+                linewidth=2.5,
+                label=dataName[0] if doubleEntry else None,
+            )
+            if doubleEntry:
+                ax_main.legend(
+                    frameon=True, facecolor="white", edgecolor="#cccccc", fontsize=16, loc="best"
+                )
+
+        # Axis Labels & Titles
+        ax_main.set_xlabel(xaxis, fontsize=18, fontweight="bold", labelpad=8)
+        ax_main.set_ylabel(yaxis, fontsize=18, fontweight="bold", labelpad=8)
 
         if times is not None and i < len(times):
             time_str = f"{times[i]}" if timeless else f"{times[i]} UTC"
-            ax.set_title(f"{dataOrigin}-{title}\n[{time_str}]", fontsize=11, fontweight="semibold", pad=8)
+            ax_main.set_title(
+                f"{title}\n[{time_str}]", fontsize=20, fontweight="semibold", pad=35 if (doubleEntry and yvar2 is not None) else 20
+            )
         else:
-            ax.set_title(f"{dataOrigin}-{title}", fontsize=11, fontweight="semibold", pad=8)
+            ax_main.set_title(f"{title}", fontsize=20, fontweight="semibold", pad=35 if (doubleEntry and yvar2 is not None) else 20)
 
-        # Invert vertical axis for pressure levels (high pressure at bottom -> surface)
         if vertical:
-            ax.invert_yaxis()
+            ax_main.invert_yaxis()
 
         # Grid and Spines styling
-        ax.grid(True, linestyle="--", alpha=0.3, color="#888888")
-        ax.tick_params(axis='both', which='major', labelsize=9)
-        for spine in ax.spines.values():
-            spine.set_color('#cccccc')
+        ax_main.grid(True, linestyle="--", alpha=0.3, color="#888888")
+        ax_main.tick_params(axis="both", which="major", labelsize=16)
+        for spine in ax_main.spines.values():
+            spine.set_color("#cccccc")
 
-    plt.tight_layout()
-    
-    # Save figure with high DPI and tight borders
+    # Save figure
+    os.makedirs(outputFolder, exist_ok=True)
     output_path = os.path.join(outputFolder, f"{title.replace(' ', '_')}.png")
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
-def trend_table(dataset, outputFolder):
+def trend_table(dataset, outputFolder,dataName):
     groupTrend = dataset.groupby(dataset.month_hour)
     timeKey3 = list(groupTrend.groups.keys())
     sub_data3 = [sub_ds for _, sub_ds in groupTrend]
-    timeName3 = [datetime.strptime(key, "%m-%H").strftime("%B %H:00") for key in timeKey3]
+    timeName3 = [f"{datetime.strptime(key, '%m-%H').strftime('%B %H')} UTC" for key in timeKey3]
 
     freqTrend = [sub_ds["frequency_trend"].values for sub_ds in sub_data3]
     strengthTrend = [sub_ds["strength_trend"].values for sub_ds in sub_data3]
@@ -482,7 +533,60 @@ def trend_table(dataset, outputFolder):
     plt.tight_layout()
 
     # 6. Save as high-resolution PNG ready for printing
-    plt.savefig(os.path.join(outputFolder,"sbi_trends_table.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(outputFolder,f"{dataName}_sbi_trends_table.png"), dpi=300, bbox_inches="tight")
+
+
+def time_grouping(dataset):
+    grouped1 = dataset.groupby(dataset.time.dt.strftime("%m-%H"))
+    timeKey = list(grouped1.groups.keys())
+    sub_data = [sub_ds for _, sub_ds in grouped1]
+    timeName = [datetime.strptime(key, "%m-%H").strftime("%B %H") for key in timeKey]  #Name of the time steps for each graphs
+    years = [np.unique(sub_ds.time.dt.year.values) for sub_ds in sub_data]
+
+    freq = [sub_ds["sbi_frequency"].values for sub_ds in sub_data]
+    strength = [sub_ds["sbi_strength"].values for sub_ds in sub_data]
+    depth = [sub_ds["sbi_depth"].values for sub_ds in sub_data]
+    intensity = [sub_ds["sbi_intensity"].values for sub_ds in sub_data]
+    topT = [sub_ds["inversion_top_temp"].values for sub_ds in sub_data]
+    topP = [sub_ds["inversion_top_pressure"].values for sub_ds in sub_data]
+    surfT = [sub_ds["surface_temp"].values for sub_ds in sub_data]
+    surfP = [sub_ds["surface_pressure"].values for sub_ds in sub_data]
+    pressure = [sub_ds["pressure"].values for sub_ds in sub_data]
+
+    grouped2 = dataset.groupby(dataset.year_month.dt.strftime("%m"))
+    timeKey2 = list(grouped2.groups.keys())
+    sub_data2 = [sub_ds for _, sub_ds in grouped2]
+    timeName2 = [datetime.strptime(key, "%m").strftime("%B") for key in timeKey2]  #Name of the time steps for each graphs
+    years2 = [np.unique(sub_ds.year_month.dt.year.values) for sub_ds in sub_data2]
+
+    diT = [sub_ds["diurnal_contrast_T"].values for sub_ds in sub_data2]
+    diF = [sub_ds["diurnal_contrast_F"].values for sub_ds in sub_data2]
+    diZ = [sub_ds["diurnal_contrast_Z"].values for sub_ds in sub_data2]
+    impact = [sub_ds["sbi_impact"].values for sub_ds in sub_data2]
+
+    return (
+        timeName,
+        years,
+        freq,
+        strength,
+        depth,
+        intensity,
+        topT,
+        topP,
+        surfT,
+        surfP,
+        pressure,
+
+        timeName2,
+        years2,
+        diT,
+        diF,
+        diZ,
+        impact,
+    )
+
+
+
 
 def radiosonde_data_count(csvFolder, figFolder, siteID):
     CSVpath = os.path.join(csvFolder, siteID)
@@ -600,11 +704,11 @@ def radiosonde_data_count(csvFolder, figFolder, siteID):
     plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
     plt.gca().xaxis.set_major_locator(MultipleLocator(base=5))
 
-    plt.xlabel("Year", fontsize=11, fontweight="bold")
-    plt.ylabel("Data count", fontsize=11, fontweight="bold")
-    plt.title(f"Number of Radiosonde Data for each Time Period for {siteID}", fontsize=12, fontweight="bold")
+    plt.xlabel("Year", fontsize=16, fontweight="bold")
+    plt.ylabel("Data count", fontsize=16, fontweight="bold")
+    plt.title(f"Number of Radiosonde Data for each Time Period for {siteID}", fontsize=18, fontweight="bold")
     plt.xticks(rotation=45)
-    plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left", frameon=True)
+    plt.legend(fontsize=16, loc="best", frameon=True)
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.tight_layout()
 
@@ -617,17 +721,18 @@ def radiosonde_data_count(csvFolder, figFolder, siteID):
 
 #Run alone plots for indivicual checks
 
-def vertical_anotated_plot(dataset, figFolder, time=[0,0,0,0]):
+def vertical_anotated_plot(dataset, figFolder, time=[0,0,0,0], dataName =""):
     site_name = dataset.attrs["SiteName"]
     if len(time) == 3:
-        dt = datetime.strptime(str(datetime(time[0],time[1],time[2])), "%Y-%m-%H")
-        dt = datetime.strptime(str(dt), "%Y-%m-%d %H:%M:%S")
-        date = f"{dt.isoformat()}.000000000"
-        output_location = os.path.join(figFolder,site_name,f"{time[0]}-{time[1]}_{time[2]}_vertical.png")
+        dt = datetime(time[0], time[1], 1, time[2])
+        date = dt.strftime("%Y-%m-%dT%H:%M:%S.000000000")  
+        titleDate = f"{time[0]}-{time[1]:02d} {time[2]:02d} UTC"     
+        output_location = os.path.join(figFolder,f"{dataName}{time[0]}-{time[1]}_{time[2]}_vertical.png")
     else :
         dt = datetime.strptime(str(datetime(time[0],time[1],time[2],time[3])), "%Y-%m-%d %H:%M:%S")
         date = f"{dt.isoformat()}.000000000"
-        output_location = os.path.join(figFolder,site_name,f"{time[0]}-{time[1]}-{time[2]}_{time[3]}_vertical.png")
+        titleDate = f"{time[0]}-{time[1]:02d}-{time[2]:02d} {time[3]:02d} UTC"  
+        output_location = os.path.join(figFolder,f"{dataName}{time[0]}-{time[1]}-{time[2]}_{time[3]}_vertical.png")
 
 
     time = dataset.time.values
@@ -641,18 +746,21 @@ def vertical_anotated_plot(dataset, figFolder, time=[0,0,0,0]):
 # Extract profiles and force scalar extraction for 1D single-value outputs
     pressure = np.asarray(dataset.pressure.values)
     temp = np.asarray(dataset.temperature.values[t_idx])
-    mixR = np.asarray(dataset.mixRatio.values[t_idx])
+    
 
     #Set surface
     sfc_P = dataset.sp.values[t_idx]
-    sfc_idx = np.where(pressure == sfc_P)[0]
-    if len(sfc_idx) == 0:  #no index found
-        p_below_idx = np.where(pressure > sfc_P)[0][-1]  # Higher pressure (closer to surface)
-        p_above_idx = np.where(pressure < sfc_P)[0][0]  # Lower pressure (higher up)
-        sfc_T = np.interp(sfc_P, (pressure[p_above_idx], pressure[p_below_idx]), (temp[p_above_idx], temp[p_below_idx]))
+    sfc_T = dataset.st.values[t_idx]
+    temp[np.where(pressure > sfc_P -10)] = np.nan
+    valid_start_idx = np.where(~np.isnan(temp))[0]
 
-    else: 
-        sfc_T = temp[sfc_idx[0]]
+    if len(valid_start_idx) > 0:
+        first_valid = valid_start_idx[0]
+        pressure = pressure[first_valid:]
+        temp = temp[first_valid:]
+
+    pressure = np.insert(pressure, 0, sfc_P)
+    temp = np.insert(temp, 0, sfc_T)    
 
 
     # Convert 1-element arrays to scalar floats to avoid string format errors
@@ -696,13 +804,15 @@ def vertical_anotated_plot(dataset, figFolder, time=[0,0,0,0]):
     )
 
     # Highlight Inversion Top Point and surface point
-    ax.scatter([inv_top_T], [inv_top_P], color="#d9534f", zorder=5, s=40)
-    ax.scatter([sfc_T], [sfc_P], color="#cf514d", zorder=5, s=40)
+    if inv_top_T is not np.nan and inv_top_P is not np.nan:
+        ax.scatter([inv_top_T], [inv_top_P], color="#d9534f", zorder=5, s=40)
+        ax.scatter([sfc_T], [sfc_P], color="#ef9c9a", zorder=5, s=40)
 
     # Formatting & Axes
     ax.set_xlabel("Temperature (K)", fontsize=10, fontweight="bold", labelpad=6)
     ax.set_ylabel("Pressure (hPa)", fontsize=10, fontweight="bold", labelpad=6)
-    ax.set_title(f"{site_name} Vertical Profile\n[{date[:19]}]", fontsize=11, fontweight="semibold", pad=10)
+
+    ax.set_title(f"{dataName} Vertical Profile\n[{titleDate}]", fontsize=11, fontweight="semibold", pad=10)
 
     # Ensure pressure coordinates auto-scale before inverting axis
     ax.relim()
@@ -721,70 +831,176 @@ def vertical_anotated_plot(dataset, figFolder, time=[0,0,0,0]):
     plt.savefig(output_location, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
-def month_timeseries(datasetD,datasetM, figFolder, time = [0,0,0]):
-    site_name = datasetD.attrs["SiteName"]
-    dataOrigin = Path(figFolder).name
-
+def month_timeseries(
+    datasetD1,
+    datasetM1,
+    datasetD2,
+    datasetM2,
+    figFolder,
+    time=[0, 0, 0],
+    dataName=["Dataset 1", "Dataset 2"],
+):
+    site_name = datasetD1.attrs.get("SiteName", "Site")
     target_year, target_month, target_hour = time[0], time[1], time[2]
 
-    sub_datasetD = datasetD.sel(
-            time=(datasetD.time.dt.year == target_year)
-            & (datasetD.time.dt.month == target_month)
-            & (datasetD.time.dt.hour == target_hour)
-        )
-    daily_strength = sub_datasetD.sbi_strength.values
-    daily_depth = sub_datasetD.sbi_depth.values
+    # Set global aesthetic style
+    plt.style.use(
+        "seaborn-v0_8-whitegrid"
+        if "seaborn-v0_8-whitegrid" in plt.style.available
+        else "default"
+    )
 
-    days = sub_datasetD.time.dt.day.values
-    
-    sub_datasetM = datasetM.sel(
-            time=(datasetM.time.dt.year == target_year)
-            & (datasetM.time.dt.month == target_month)
-            & (datasetM.time.dt.hour == target_hour)
-        )
-    avg_strength = sub_datasetM.sbi_strength.values.item()
-    avg_depth = sub_datasetM.sbi_depth.values.item()
+    primary_color = "#005b96"    # Deep Ocean Blue
+    secondary_color = "#e65c00"  # Warm Accent Coral
 
+    # --- Dataset Sub-selection ---
+    sub_D1 = datasetD1.sel(
+        time=(datasetD1.time.dt.year == target_year)
+        & (datasetD1.time.dt.month == target_month)
+        & (datasetD1.time.dt.hour == target_hour)
+    )
+    sub_D2 = datasetD2.sel(
+        time=(datasetD2.time.dt.year == target_year)
+        & (datasetD2.time.dt.month == target_month)
+        & (datasetD2.time.dt.hour == target_hour)
+    )
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    primary_color = "#005b96" 
-    secondary_color = "#e65c00"
+    # --- Align Daily Datasets by Day-of-Month using Pandas ---
+    s1_str = pd.Series(sub_D1.sbi_strength.values, index=sub_D1.time.dt.day.values)
+    s2_str = pd.Series(sub_D2.sbi_strength.values, index=sub_D2.time.dt.day.values)
 
+    s1_dep = pd.Series(sub_D1.sbi_depth.values, index=sub_D1.time.dt.day.values)
+    s2_dep = pd.Series(sub_D2.sbi_depth.values, index=sub_D2.time.dt.day.values)
+
+    # Combine into aligned DataFrames to handle mismatched day counts automatically
+    df_str = pd.DataFrame({"d1": s1_str, "d2": s2_str})
+    df_dep = pd.DataFrame({"d1": s1_dep, "d2": s2_dep})
+
+    days = df_str.index.values
+    d1_strength, d2_strength = df_str["d1"].values, df_str["d2"].values
+    d1_depth, d2_depth = df_dep["d1"].values, df_dep["d2"].values
+
+    # --- Monthly Averages ---
+    sub_M1 = datasetM1.sel(
+        time=(datasetM1.time.dt.year == target_year)
+        & (datasetM1.time.dt.month == target_month)
+        & (datasetM1.time.dt.hour == target_hour)
+    )
+    sub_M2 = datasetM2.sel(
+        time=(datasetM2.time.dt.year == target_year)
+        & (datasetM2.time.dt.month == target_month)
+        & (datasetM2.time.dt.hour == target_hour)
+    )
+
+    avg_strength1 = sub_M1.sbi_strength.values.item()
+    avg_depth1 = sub_M1.sbi_depth.values.item()
+    avg_strength2 = sub_M2.sbi_strength.values.item()
+    avg_depth2 = sub_M2.sbi_depth.values.item()
+
+    # --- Helper Function for Statistics Calculation ---
+    def calc_stats(y1, y2):
+        mask = ~np.isnan(y1) & ~np.isnan(y2)
+        if np.sum(mask) > 1:
+            m, o = y1[mask], y2[mask]  # y1: Dataset 1, y2: Dataset 2
+            bias = np.mean(m - o)
+            rmse = np.sqrt(np.mean((m - o) ** 2))
+            r = np.corrcoef(o, m)[0, 1] if np.std(o) > 0 and np.std(m) > 0 else np.nan
+            return f"Bias: {bias:+.2f} | RMSE: {rmse:.2f} | Corr: {r:.2f}"
+        return "N/A"
+
+    stats_strength = calc_stats(d1_strength, d2_strength)
+    stats_depth = calc_stats(d1_depth, d2_depth)
+
+    # --- Setup Figure and Subplots ---
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    name1 = dataName[0] if isinstance(dataName, (list, tuple)) else "Dataset 1"
+    name2 = dataName[1] if isinstance(dataName, (list, tuple)) and len(dataName) > 1 else "Dataset 2"
+
+    # ==========================================
     # --- Top Subplot: SBI Strength ---
-    ax1.plot(
-        days, daily_strength, marker="o", color=primary_color, label="Daily SBI Strength"
-    )
+    # ==========================================
+    ax1.plot(days, d1_strength, marker="o", color=primary_color, linewidth=2, label=f"{name1} Daily")
     ax1.axhline(
-        y=avg_strength,
-        color=secondary_color,
-        linestyle="--",
-        linewidth=2,
-        label=f"Monthly Avg ({avg_strength:.2f})",
+        y=avg_strength1, color=primary_color, linestyle="--", linewidth=1.8, label=f"{name1} Avg ({avg_strength1:.2f} K)"
     )
-    ax1.set_ylabel("SBI Strength (K)")
-    ax1.set_title(
-        f"{dataOrigin}_{site_name} - {target_year}-{target_month:02d} (Hour {target_hour:02d}:00)"
-    )
-    ax1.grid(True, linestyle=":", alpha=0.6)
-    ax1.legend(loc="upper right")
 
-    # --- Bottom Subplot: SBI Depth ---
-    ax2.plot(days, daily_depth, marker="o", color= primary_color, label="Daily SBI Depth")
-    ax2.axhline(
-        y=avg_depth,
-        color=secondary_color,
-        linestyle="-",
-        linewidth=2,
-        label=f"Monthly Avg ({avg_depth:.2f})",
+    ax1.plot(days, d2_strength, marker="s", color=secondary_color, linewidth=2, label=f"{name2} Daily")
+    ax1.axhline(
+        y=avg_strength2, color=secondary_color, linestyle="--", linewidth=1.8, label=f"{name2} Avg ({avg_strength2:.2f} K)"
     )
-    ax2.set_xlabel("Day of Month")
-    ax2.set_ylabel("SBI Depth (m)")
-    ax2.grid(True, linestyle=":", alpha=0.6)
-    ax2.legend(loc="upper right")
+
+    ax1.set_ylabel("SBI Strength (K)", fontsize=18, fontweight="bold")
+    ax1.set_title(
+        f"{site_name} - SBI Strength - {target_year}-{target_month:02d} ({target_hour:02d} UTC)",
+        fontsize=20,
+        fontweight="bold",
+        pad=35,
+    )
+    ax1.grid(True, linestyle="--", alpha=0.4, color="#888888")
+    ax1.legend(
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1),
+        borderaxespad=0,
+        frameon=True,
+        facecolor="white",
+        edgecolor="#cccccc",
+        fontsize=16,
+    )
+
+    # Statistics Box Above Ax1
+    ax1.text(
+        0.5, 1.02, stats_strength, transform=ax1.transAxes, fontsize=16, family="monospace",
+        verticalalignment="bottom", horizontalalignment="center",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="#f8f9fa", edgecolor="#cccccc", alpha=0.95)
+    )
+
+    # ==========================================
+    # --- Bottom Subplot: SBI Depth ---
+    # ==========================================
+    ax2.plot(days, d1_depth, marker="o", color=primary_color, linewidth=2, label=f"{name1} Daily")
+    ax2.axhline(
+        y=avg_depth1, color=primary_color, linestyle="--", linewidth=1.8, label=f"{name1} Avg ({avg_depth1:.2f} m)"
+    )
+
+    ax2.plot(days, d2_depth, marker="s", color=secondary_color, linewidth=2, label=f"{name2} Daily")
+    ax2.axhline(
+        y=avg_depth2, color=secondary_color, linestyle="--", linewidth=1.8, label=f"{name2} Avg ({avg_depth2:.2f} m)"
+    )
+
+    ax2.set_xlabel("Day of Month", fontsize=18, fontweight="bold")
+    ax2.set_ylabel("SBI Depth (m)", fontsize=18, fontweight="bold")
+    ax2.set_title(
+        f"{site_name} - SBI Depth - {target_year}-{target_month:02d} ({target_hour:02d} UTC)",
+        fontsize=20,
+        fontweight="bold",
+        pad=35,
+    )
+    ax2.grid(True, linestyle="--", alpha=0.4, color="#888888")
+    ax2.legend(
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1),
+        borderaxespad=0,
+        frameon=True,
+        facecolor="white",
+        edgecolor="#cccccc",
+        fontsize=16,
+        )
+
+    # Statistics Box Above Ax2
+    ax2.text(
+        0.5, 1.02, stats_depth, transform=ax2.transAxes, fontsize=16, family="monospace",
+        verticalalignment="bottom", horizontalalignment="center",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="#f8f9fa", edgecolor="#cccccc", alpha=0.95)
+    )
 
     plt.tight_layout()
-    outFolder = os.path.join(figFolder,site_name,f"{target_year}_{target_month:02d}_{target_hour:02d}UTC_StrDepth.png")
-    plt.savefig(outFolder, dpi=300)
+
+    # Save figure
+    os.makedirs(figFolder, exist_ok=True)
+    out_name = f"{site_name}_{target_year}_{target_month:02d}_{target_hour:02d}UTC_StrDepth.png"
+    outPath = os.path.join(figFolder, out_name)
+    plt.savefig(outPath, dpi=300, bbox_inches="tight")
     plt.close()
 
 def vapor_presence_plot(dataset, figFolder):
@@ -885,11 +1101,11 @@ def vapor_presence_plot(dataset, figFolder):
     for col_idx, h in enumerate(hour):
         # Column headers
         axes[0, col_idx].set_title(
-            f"{h:02d}:00 UTC – Any Valid Profile", fontsize=13, fontweight="bold"
+            f"{h:02d}:00 UTC – Any Valid Profile", fontsize=16, fontweight="bold"
         )
         axes[1, col_idx].set_title(
             f"{h:02d}:00 UTC – Strictly All Valid Profiles",
-            fontsize=13,
+            fontsize=16,
             fontweight="bold",
         )
 
@@ -903,15 +1119,15 @@ def vapor_presence_plot(dataset, figFolder):
             if not ax.yaxis_inverted():
                 ax.invert_yaxis()
 
-        axes[1, col_idx].set_xlabel("Year", fontsize=12)
+        axes[1, col_idx].set_xlabel("Year", fontsize=16,fontweight="bold")
 
-    axes[0, 0].set_ylabel("Pressure (hPa)", fontsize=12)
-    axes[1, 0].set_ylabel("Pressure (hPa)", fontsize=12)
+    axes[0, 0].set_ylabel("Pressure (hPa)", fontsize=16,fontweight="bold")
+    axes[1, 0].set_ylabel("Pressure (hPa)", fontsize=16,fontweight="bold")
 
     # Title & Legend
     fig.suptitle(
         f"Mixing Ratio Data Availability – {site_name}",
-        fontsize=16,
+        fontsize=20,
         fontweight="bold",
         y=0.98,
     )
@@ -928,7 +1144,7 @@ def vapor_presence_plot(dataset, figFolder):
         bbox_to_anchor=(0.5, 0.94),
         ncol=3,
         frameon=False,
-        fontsize=12,
+        fontsize=16,
     )
 
     plt.tight_layout(rect=[0, 0, 1, 0.91])
@@ -950,16 +1166,30 @@ if __name__ == "__main__":
     #from main import one_time
     #one_time(dataset = source)
 
-    ds = xr.open_dataset(r"Data&Model\ERA5\71082\era5_71082_daily.nc")
-    dm = xr.open_dataset(r"Data&Model\ERA5\71082\era5_71082_monthly.nc")
-    vertical_anotated_plot(ds,r"Figures\ERA5",[2019,12,6,0])
+    da = xr.open_dataset(r"Data&Model\Radiosonde\NC\71082_monthly.nc")
+    db = xr.open_dataset(r"Data&Model\ERA5\71082\era5_71082_monthly.nc")
 
-    for i in range(0,48): #0,48
-        try:
-            vertical_anotated_plot(ds,f"Figures/{source}",[1978+i,12,6,0])
-            month_timeseries(ds,dm, f"Figures/{source}", [1978+i,12,0])
-        except Exception:
-            pass
+    d1 = xr.open_dataset(r"Data&Model\Radiosonde\NC\71082_daily.nc")
+    d2 = xr.open_dataset(r"Data&Model\ERA5\71082\era5_71082_daily.nc")
+    year = 2000
+    month = 2
+    day =16
+    figFolder = r"Figures\71082\Profiles"
+    vertical_anotated_plot(d1,figFolder,[year,month,day,00],"Radiosonde")
+    vertical_anotated_plot(d2,figFolder,[year,month,day,00],"ERA5")
+    vertical_anotated_plot(d1,figFolder,[year,month,day,12],"Radiosonde")
+    vertical_anotated_plot(d2,figFolder,[year,month,day,12],"ERA5")
+
+    vertical_anotated_plot(da,figFolder,[year,month,00],"Radiosonde")
+    vertical_anotated_plot(db,figFolder,[year,month,00],"ERA5")
+    vertical_anotated_plot(da,figFolder,[year,month,12],"Radiosonde")
+    vertical_anotated_plot(db,figFolder,[year,month,12],"ERA5")
+
+    month_timeseries(d2,db,d1,da, figFolder,[year,month,00],["ERA5","Radiosonde"])
+    month_timeseries(d2,db,d1,da, figFolder,[year,month,12],["ERA5","Radiosonde"])
+
+
+
 
     
 

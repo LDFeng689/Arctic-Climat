@@ -449,7 +449,9 @@ def radiosonde_daily_climatology(dataset):
     temp = dataset.temperature.values
     time  = dataset.time.values  
     pressure = dataset.pressure.values
-    print(pressure)
+    sfc_t = dataset.st.values
+    sfc_p = dataset.sp.values
+    sfc_q = dataset.sq.values
 
     dim = len(time)
     sbi_strength    = np.full(dim, np.nan, dtype="float32")
@@ -460,7 +462,9 @@ def radiosonde_daily_climatology(dataset):
     inversion_top_pressure = np.full(dim, np.nan, dtype="float32")
     inversion_top_temp   = np.full(dim, np.nan, dtype="float32")
 
-    surface_temp     = np.full(dim, np.nan, dtype="float32")
+    surface_pressure = np.full(dim, sfc_p, dtype="float32")
+    surface_temp     = np.full(dim, sfc_t, dtype="float32")
+    surface_mixRatio = np.full(dim, sfc_q, dtype="float32")
 
     hasV = np.full(dim, 1.0, dtype="float32") #To check if a day has not enough 
 
@@ -472,19 +476,18 @@ def radiosonde_daily_climatology(dataset):
     for t_idx in range(len(time)):
 
         #Find surface temperature location
-        t1_idx = int(np.argmax(~np.isnan(temp[t_idx])))
-        surface_temp[t_idx] = temp[t_idx][t1_idx]
-        t1 = temp[t_idx][t1_idx]
-        print(temp[t_idx])
-        inversionFound = False
-        p1 = pressure[t1_idx]
-        v1 = mixR[t_idx,t1_idx]
-        if np.isnan(v1): 
-            v1 = 0.0
-        depth = 0.0
-       
+        t1 = sfc_t[t_idx]
 
-        for p_idx in range(t1_idx+1,len(pressure)):
+        inversionFound = False
+        p1 = sfc_p[t_idx]
+        v1 = sfc_q[t_idx]
+        if np.isnan(v1): 
+            v1 = 0.0 #dry air approx
+        depth = 0.0
+
+        t1_idx = int(np.argmax(~np.isnan(temp[t_idx])))
+
+        for p_idx in range(t1_idx,len(pressure)):
             t2 = temp[t_idx,p_idx]
             p2 = pressure[p_idx]
             v2 = mixR[t_idx, p_idx]
@@ -542,6 +545,8 @@ def radiosonde_daily_climatology(dataset):
 
     #Assign Surface State Variables
     dataset["surface_temp"]   = (("time",), surface_temp, {"units": "K", "long_name": "Surface Temperature"})
+    dataset["surface_pressure"]   = (("time",), surface_pressure, {"units": "hPa", "long_name": "Surface Pressure"})
+    dataset["surface_mixRatio"]   = (("time",), surface_mixRatio, {"units": "kg/kg", "long_name": "Surface Mixing ratio"})
     dataset["hasV"]   = (("time",), hasV, {"long_name": "Mixing ratio availability diagnostic"})
 
     # 3. Save/Export the updated Dataset to NetCDF
@@ -721,9 +726,9 @@ def radiosonde_monthly_climatology(datasetD, dataLack = [], overwrite = False):
 
     ELR = 0.0065   #Environmental Lapse rate in K/m
     sbiImpact_00 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 0)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 0)).values 
-    sbiImpact_12 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 12)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 12)).values     
+    sbiImpact_12 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 12)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 12)).values    
     sbi_impact = (sbiImpact_00 + sbiImpact_12)/2
-    ds_climatology["sbi_impact"] = (("year_month"), sbi_impact, {"units": "K m", "long_name": "Cumulative Thermal Deficit Impact"})
+    ds_climatology["sbi_impact"] = (("year_month"), sbi_impact, {"units": "C month^-1", "long_name": "Cumulative Thermal Deficit Impact"})
 
     diurnal_contrast_F = ds_climatology["sbi_frequency"].sel(time=(ds_climatology.time.dt.hour == 12)).values - ds_climatology["sbi_frequency"].sel(time=(ds_climatology.time.dt.hour == 0)).values
     ds_climatology["diurnal_contrast_F"] = (("year_month",), diurnal_contrast_F, {"units": "%", "long_name": "Diurnal Frequency Contrast (12Z - 00Z)"})
@@ -746,11 +751,8 @@ def radiosonde_coordinates(csvFolder, coordinate = [45,0,45,0]):
 
     # Use rglob to directly match all .csv files regardless of folder depth
     for csv_file in csv_folder.rglob("*.csv"):
-        tryPlugin = False
         try:
-            # 1. 'usecols' speeds up reading by skipping unused columns
-            # 2. 'engine="c"' ensures high-performance parsing
-            data = pd.read_csv(csv_file, usecols=["longitude", "latitude"])
+            data = pd.read_csv(csv_file, usecols=["longitude", "latitude","pressure_hPa"])
         except (ValueError, KeyError):
             # Skip files missing 'longitude' or 'latitude' headers
             continue
@@ -758,6 +760,13 @@ def radiosonde_coordinates(csvFolder, coordinate = [45,0,45,0]):
         # Convert to numeric safely
         lon = pd.to_numeric(data["longitude"], errors="coerce")
         lat = pd.to_numeric(data["latitude"], errors="coerce")
+        p = pd.to_numeric(data["pressure_hPa"], errors="coerce")
+
+        # Initial Filter: Remove all rows where pressure < 700 hPa (keeps pressure >= 700 hPa)
+        valid_mask = p >= 700
+        lon = lon[valid_mask]
+        lat = lat[valid_mask]
+
 
         # Extract min/max (Pandas automatically drops NaNs)
         min_lon, max_lon = lon.min(), lon.max()
@@ -776,9 +785,8 @@ def radiosonde_coordinates(csvFolder, coordinate = [45,0,45,0]):
         if pd.notna(min_lat) and min_lat < coordinate[2]:
             coordinate[2] = min_lat
             origins[2] = csv_file
-    #print(origins)
-    coordinate = [float(x) for x in coordinate]
-    return(coordinate)
+    coordinates = [float(x) for x in coordinate]
+    return(coordinates)
                             
 def era5_daily_climatology(dataset, overwrite = False):
     site_name = dataset.attrs["SiteName"]
@@ -794,8 +802,7 @@ def era5_daily_climatology(dataset, overwrite = False):
     temp = dataset.temperature.values
     q_array = dataset.mixRatio.values
     sfc_p = dataset.sp.values
-    sfc_t = dataset.t2m.values 
-
+    sfc_t = dataset.st.values 
     time = dataset.time.values
 
     dim= len(time)
@@ -804,9 +811,12 @@ def era5_daily_climatology(dataset, overwrite = False):
     sbi_depth       = np.full(dim, np.nan, dtype="float32")
     sbi_intensity   = np.full(dim, np.nan, dtype="float32")
     sbi_frequency = np.full(dim, 0.0, dtype="float32")
+
     inversion_top_pressure = np.full(dim, np.nan, dtype="float32")
     inversion_top_temp   = np.full(dim, np.nan, dtype="float32")
     surface_temp     = np.full(dim, sfc_t, dtype="float32")
+    surface_pressure     = np.full(dim, sfc_p, dtype="float32")
+
 
     # Constants 
     Rd = 287 
@@ -814,56 +824,55 @@ def era5_daily_climatology(dataset, overwrite = False):
 
     for t_idx in range(len(time),):
 
-                sfc_temp = sfc_t[t_idx]
-                sfc_pressure = sfc_p[t_idx]
+        sfc_temp = sfc_t[t_idx]
+        sfc_pressure = sfc_p[t_idx]
+        t1,p1,q1 = sfc_temp, sfc_pressure,0.0        #dry air approx
+        depth = 0.0
+        inversionFound = False
 
+        t1_idx = int(np.argmax(~np.isnan(temp[t_idx])))
+        min_req = 10
+        p1_idx = int(np.argmin(np.where(pressure <= p1-min_req, p1-pressure, np.inf)) )
+        sfc_idx = max(t1_idx,p1_idx)
+        # Search vertically upward through the indices of the pressure levels
+        for p_idx in range(sfc_idx, len(pressure)):
+            p2 = pressure[p_idx]
+            t2 = temp[t_idx, p_idx]
+            q2 = q_array[t_idx, p_idx]
+            if p1<p2:
+                print(t_idx)
+            
+            if t1 > t2: #Top = highest peak thats greater or equal than the one below it
+                # Inversion peak located
+                if (t1 - sfc_temp) > 0.05:
+                    inversion_top_temp[t_idx] = t1
+                    inversion_top_pressure[t_idx] = p1
+                    sbi_depth[t_idx] = depth
+                    sbi_strength[t_idx] = t1 - sfc_temp
+                    sbi_frequency[t_idx] = 1.0
+                    inversionFound = True
 
-                t1,p1 = sfc_temp, sfc_pressure
-                next_p_idx = np.argmin(np.where(pressure <= p1, p1-pressure, np.inf)) 
-                depth = 0.0
-                inversionFound = False
-                if next_p_idx == 0:
-                    q1 = q_array[t_idx, 0]
-                else:
-                    q1 = q_array[t_idx, next_p_idx-1]
-                
-                # Search vertically upward through the indices of the pressure levels
-                for p_idx in range(next_p_idx, len(pressure)):
-                    p2 = pressure[p_idx]
-                    t2 = temp[t_idx, p_idx]
-                    q2 = q_array[t_idx, p_idx]
-                    
-                    if t1 > t2: #Top = highest peak thats greater or equal than the one below it
-                        # Inversion peak located
-                        if (t1 - sfc_temp) > 0.05:
-                            inversion_top_temp[t_idx] = t1
-                            inversion_top_pressure[t_idx] = p1
-                            sbi_depth[t_idx] = depth
-                            sbi_strength[t_idx] = t1 - sfc_temp
-                            sbi_frequency[t_idx] = 1.0
-                            inversionFound = True
-
-                            if sbi_depth[t_idx] !=0:
-                                sbi_intensity[t_idx] = sbi_strength[t_idx]/sbi_depth[t_idx]
-                            else:
-                                sbi_intensity[t_idx] = 0
-                        break   
-
+                    if sbi_depth[t_idx] !=0:
+                        sbi_intensity[t_idx] = sbi_strength[t_idx]/sbi_depth[t_idx]
                     else:
-                        # Inversion layer continues; calculate layer thickness
-                        Tavg = (t1 + t2) / 2.0
-                        Qavg = (q1 + q2) / 2.0
-                        logp = np.log(p1 / p2)
-                        
-                        depth += (Rd * (1.0 + 0.6 * Qavg) * Tavg * logp) / g
-                        
-                        # Advance pointers up to the next layer
-                        t1, q1, p1 = t2, q2, p2
+                        sbi_intensity[t_idx] = 0
+                break   
 
-                if not inversionFound:
-                    sbi_intensity[t_idx] = np.nan
-                    sbi_strength[t_idx] = np.nan
-                    sbi_depth[t_idx] = np.nan
+            else:
+                # Inversion layer continues; calculate layer thickness
+                Tavg = (t1 + t2) / 2.0
+                Qavg = (q1 + q2) / 2.0
+                logp = np.log(p1 / p2)
+                
+                depth += (Rd * (1.0 + 0.6 * Qavg) * Tavg * logp) / g
+                
+                # Advance pointers up to the next layer
+                t1, q1, p1 = t2, q2, p2
+
+        if not inversionFound:
+            sbi_intensity[t_idx] = np.nan
+            sbi_strength[t_idx] = np.nan
+            sbi_depth[t_idx] = np.nan
 
     # 1. Assign the Core SBI Diagnostic Arrays
     dim3 = ("time", )
@@ -878,6 +887,8 @@ def era5_daily_climatology(dataset, overwrite = False):
 
     # 3. Assign Surface State Variables
     dataset["surface_temp"]   = (dim3, surface_temp, {"units": "K", "long_name": "Surface Temperature"})
+    dataset["surface_pressure"]   = (dim3, surface_pressure, {"units": "hPa", "long_name": "Surface Pressure"})
+
 
     # 5. Save/Export the updated Dataset to NetCDF
     dataset.to_netcdf(output_location)
@@ -1023,9 +1034,9 @@ def era5_monthly_climatology(datasetD, overwrite = False):
 
     ELR = 0.0065   #Environmental Lapse rate in K/m
     sbiImpact_00 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 0)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 0)).values 
-    sbiImpact_12 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 12)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 12)).values     
+    sbiImpact_12 = ds_climatology["sbi_depth"].sel(time=(ds_climatology.time.dt.hour == 12)).values * ELR + ds_climatology["sbi_strength"].sel(time=(ds_climatology.time.dt.hour == 12)).values  
     sbi_impact = (sbiImpact_00 + sbiImpact_12)/2
-    ds_climatology["sbi_impact"] = (("year_month"), sbi_impact, {"units": "K m", "long_name": "Cumulative Thermal Deficit Impact"})
+    ds_climatology["sbi_impact"] = (("year_month"), sbi_impact, {"units": "°C month-1", "long_name": "Cumulative Thermal Deficit Impact"})
 
     diurnal_contrast_F = ds_climatology["sbi_frequency"].sel(time=(ds_climatology.time.dt.hour == 12)).values - ds_climatology["sbi_frequency"].sel(time=(ds_climatology.time.dt.hour == 0)).values
     ds_climatology["diurnal_contrast_F"] = (("year_month",), diurnal_contrast_F, {"units": "%", "long_name": "Diurnal Frequency Contrast (12Z - 00Z)"})
@@ -1048,9 +1059,7 @@ def era5_monthly_climatology(datasetD, overwrite = False):
 
 if __name__ == "__main__":
 
-
-    dataset = xr.open_dataset(r"Data&Model\Radiosonde\NC\71082_daily.nc", chunks={'time': 10})
-    radiosonde_monthly_climatology(dataset)
+    radiosonde_coordinates("Data&Model/Radiosonde/CSV/71082",[82.499, -62.347,82.499, -62.347])
 
 
     #radiosonde_climatology(dataset, overwrite=True)

@@ -117,8 +117,6 @@ def radiosonde_assemble_to_nc(csvFolder, overwrite =False):
                         cleaned_vals = pd.to_numeric(ds[var].values.ravel(), errors='coerce').reshape(ds[var].shape)
                         ds[var] = (ds[var].dims, cleaned_vals)
 
-
-        ds = ds.dropna(dim="pressure", how="all")  #See if it fixes things
         ds.to_netcdf(location, mode='w') 
         return ds
         
@@ -150,8 +148,13 @@ def radiosonde_monthly_average(monthlyFolder, year, month):
         "pressure": "hPa",
         "mixRatio": "kg/kg",
         "temperature": "k",
+        "sp": "hPa",
+        "st": "K",
+        "sq": "kg/kg",
         }
-        dailyData = []
+
+        profile_list = []
+        surface_list = []
         for csvFile in csvFiles:
                 #Initial load and cleaning of the csv
                 data = pd.read_csv(csvFile)
@@ -164,58 +167,111 @@ def radiosonde_monthly_average(monthlyFolder, year, month):
                         data["mixRatio"] = pd.to_numeric(data["mixRatio"], errors="coerce")/1000  #was g/kg so convert to kg/kg
 
                 data = data.drop_duplicates(subset=["pressure"], keep="first")
-                data = data.set_index("pressure")
+                data = data.sort_values("pressure", ascending=False)
+                data = data[data["pressure"] != 9999].reset_index(drop=True)
 
-                #Turn to Xarray and interpolate over pressure levels
-                ds = data.to_xarray()
-                ds = ds.interp(pressure = target_pressures, method = 'linear')
+
+                # --- STEP 1: Extract Exact Surface Observation ---
+                #Sort out the surface values
+                surfaceRow = data.iloc[0]
+                sp_val = surfaceRow["pressure"]
+                st_val = surfaceRow["temperature"]
+                sq_val = surfaceRow["mixRatio"]
 
                 #obtain the time values
+                day, hour = Path(csvFile).stem.split("_")
+                obs_time = datetime(int(year), int(month), int(day), int(hour))
+
+                # Create 1D Surface Dataset
+                ds_surf = xr.Dataset(
+                        data_vars={
+                                "sp": (("time",), [sp_val]),
+                                "st": (("time",), [st_val]),
+                                "sq": (("time",), [sq_val]),
+                        },
+                        coords={"time": [obs_time]},
+                        )
+                surface_list.append(ds_surf)
+
+                # --- STEP 2: Interpolate Profile to Fixed Pressure Grid ---
+                df_profile = data.set_index("pressure")
+                ds_prof = df_profile.to_xarray().interp(pressure=target_pressures, method="linear")
+                ds_prof = ds_prof.expand_dims(time=[obs_time])
+
+                # --- STEP 3: Mask Levels Below Surface Pressure ---
+                # Any level where target pressure > exact surface pressure is underground
+                is_above_ground = ds_prof["pressure"] < sp_val -10
+                ds_prof["temperature"] = xr.where(is_above_ground, ds_prof["temperature"], np.nan)
+                ds_prof["mixRatio"] = xr.where(is_above_ground, ds_prof["mixRatio"], np.nan)
+                profile_list.append(ds_prof)  
                 
-                filename = Path(csvFile).stem
-                
-                day, hour = filename.split("_")
-                ds = ds.expand_dims(time = [datetime(int(year),int(month),int(day),int(hour))])
+        # --- Combine into Unified Dataset ---
+        ds_profiles_all = xr.concat(profile_list, dim="time")
+        ds_surface_all = xr.concat(surface_list, dim="time")
+        daily_dataset = xr.merge([ds_profiles_all, ds_surface_all])   
+        daily_dataset = daily_dataset.transpose("time", "pressure")                   
 
-                #Add metadata to the variables
-                for var_name, unit in units_dict.items():
-                        if var_name in ds:
-                                ds[var_name].attrs["units"] = unit
+        #Add metadata to the variables
+        for var_name, unit in units_dict.items():
+                if var_name in daily_dataset:
+                        daily_dataset[var_name].attrs["units"] = unit
 
-                        # Also tag the pressure coordinate axis attributes
-                        ds["pressure"].attrs["units"] = "hPa"
-                        ds["pressure"].attrs["standard_name"] = "air_pressure"
-                dailyData.append(ds)
+        # Also tag the pressure coordinate axis attributes
+        daily_dataset["pressure"].attrs["units"] = "hPa"
+        daily_dataset["pressure"].attrs["standard_name"] = "air_pressure"
 
-
-        daily_dataset = xr.concat(dailyData, dim= "time", data_vars="all", coords="all", combine_attrs="override")  #concat to a new "day" dimensions that will disappear when averaging
         return daily_dataset
         
 #now need to figure out the time indices
 
 
 #Here we average all the coordinates to 1 point for the site and take care of the other little problems
-def era5_data_format(levelData, surfaceData, siteID, timePeriod = "daily", overwrite = True):
-        filename = f"Data&Model/ERA5/{siteID}/ERA5_{timePeriod}_{siteID}.nc"
+def era5_data_format(levelData, surfaceData, siteID, timePeriod = "daily", overwrite = True, coordinates = None):
+        filename = f"Data&Model/ERA5/{siteID}/ERA5_{timePeriod}_{siteID}_raw.nc"
         if os.path.isfile(filename) and overwrite == False:    #Skip if already exist and don't want to do changes to it
                 print(f"{siteID} NC file already assembled")
                 ds = xr.open_dataset(filename)
                 return ds
         print(f"Formating ERA5 {timePeriod} data")
-        level = xr.open_dataset(levelData,chunks={'time': 10}, engine='netcdf4')
-        surface = xr.open_dataset(surfaceData,chunks={'time': 10}, engine='netcdf4')
+        level = xr.open_dataset(levelData, engine='netcdf4')
+        surface = xr.open_dataset(surfaceData, engine='netcdf4')
+
+        #This assures that next time,we can just download a full dataset for the entire arctic section and just slice the parts we want from it
+        if coordinates is not None:
+                # coordinates expected in order: [North, West, South, East]
+                n_lat, w_lon, s_lat, e_lon = coordinates
+                # Check coordinate direction to ensure correct slicing order
+                if level.latitude[0] > level.latitude[-1]:
+                        lat_slice = slice(n_lat, s_lat)
+                else:
+                        lat_slice = slice(s_lat, n_lat)
+
+                lon_slice = slice(w_lon, e_lon)
+
+                level = level.sel(latitude=lat_slice, longitude=lon_slice)
+                surface = surface.sel(latitude=lat_slice, longitude=lon_slice)
+
+
 
         surface['sp'] = surface['sp'] / 100.0
         surface['sp'].attrs['units'] = 'hPa'
 
         dataset = xr.merge([level, surface], compat = 'override')
-        dataset = finalData.rename({
+        dataset = dataset.rename({
                 "pressure_level" : "pressure",
                 "valid_time" : "time",
                 "t" : "temperature",
-                "q" : "mixRatio"   #Rename for standarize
+                "q" : "mixRatio",
+                "t2m": "st"      #Rename for standarize
         })
-        finalData["mixRatio"].attrs["long_name"] = "Specific_humidity" 
+        dataset["mixRatio"].attrs["long_name"] = "Specific_humidity" 
+
+        # Mask condition: Keep data where pressure is strictly less than surface pressure (above ground)
+        # xr.where sets values that fail the condition (subsurface) to NaN automatically
+
+        is_above_ground = dataset["pressure"] < dataset['sp']
+        dataset["temperature"] = xr.where(is_above_ground, dataset["temperature"], np.nan)
+        dataset["mixRatio"] = xr.where(is_above_ground, dataset["mixRatio"], np.nan)
 
         #Geometric mean
         dataset = dataset.mean(dim="longitude", skipna=True)    
@@ -228,6 +284,7 @@ def era5_data_format(levelData, surfaceData, siteID, timePeriod = "daily", overw
                 finalData = finalData.isel(pressure=slice(None, None, -1))
 
         finalData.attrs["SiteName"] = siteID
+        finalData = finalData.transpose("time", "pressure")  
 
 
         finalData.to_netcdf(filename)
